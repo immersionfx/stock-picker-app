@@ -1,0 +1,15 @@
+As a day-trader you need something that moves around and allows you to trade the size of position relative to your account purchasing power and risk tolerance.  
+
+To start this process I look for stocks with higher ATR vs the rest of their industry/sector.  This doesn’t change drastically from one day to the next, so a weekly scan to identify these stocks can suffice. 
+
+In addition, you need liquidity. If the stock has too low of volume then the spreads can be wider, stock trades too “thinly” and you could experience slippage when filling a market or stop market order. 
+
+Finding stocks that meet both of these criteria can narrow down a list quite a bit, especially when you add price as a filter into the mix. 
+
+On a daily basis, checking the premarket percent change and volume can help you narrow down that list further. 
+
+Earnings announcements, other fundamental news for the stock or industry can certainly influence the stocks that you trade day to day. 
+
+Lastly, technical factors such as whether the stock is trading in the previous month, week, or days range can influence the trends that you see on the daily charts as well as the intraday time frames.  Couple this information with what the SPX and the sector for the stock is doing and you once again narrow the list down even further. 
+
+On any given day I’ll have a list of 150 stocks that meet my price, volume, and volatility criteria. I will rank them by relative strength on the weekly chart (I like to use a 13 week relative strength ranking. You can also use a 12 period EMA). Once I have those ranked I will focus on the top 10% and bottom 10% for the relatively strong and week stocks to develop a long/short list which brings me to about 30 stocks I am watching daily. 
