@@ -410,5 +410,280 @@ class StockScanner:
             }
             
         except Exception as e:
-            logger.error(f"Error running compre
-(Content truncated due to size limit. Use line ranges to read in chunks)
+            logger.error(f"Error running comprehensive scan: {str(e)}")
+            return {}
+    
+    def _find_opportunities(self, deviation_results, volume_results, atr_results, catalyst_results, strength_results):
+        """
+        Find trading opportunities by combining results from different scans
+        
+        Args:
+            deviation_results (list): Results from price deviation scan
+            volume_results (list): Results from volume scan
+            atr_results (list): Results from ATR scan
+            catalyst_results (list): Results from catalyst check
+            strength_results (list): Results from relative strength calculation
+            
+        Returns:
+            list: List of dictionaries with trading opportunities
+        """
+        opportunities = []
+        
+        # Create lookup dictionaries for faster access
+        volume_lookup = {item['symbol']: item for item in volume_results}
+        atr_lookup = {item['symbol']: item for item in atr_results}
+        catalyst_lookup = {item['symbol']: item for item in catalyst_results}
+        strength_lookup = {item['symbol']: item for item in strength_results}
+        
+        # Start with stocks that have significant price deviation
+        for dev_item in deviation_results:
+            symbol = dev_item['symbol']
+            score = 0
+            opportunity = {
+                'symbol': symbol,
+                'price': dev_item['current_price'],
+                'deviation': dev_item['deviation_pct'],
+                'direction': dev_item['direction'],
+                'signals': []
+            }
+            
+            # Add price deviation signal
+            opportunity['signals'].append({
+                'type': 'price_deviation',
+                'value': dev_item['deviation_pct'],
+                'description': f"{abs(dev_item['deviation_pct']):.2f}% {dev_item['direction']}"
+            })
+            score += min(abs(dev_item['deviation_pct']) / 2, 5)  # Cap at 5 points
+            
+            # Check for high volume
+            if symbol in volume_lookup:
+                vol_item = volume_lookup[symbol]
+                opportunity['relative_volume'] = vol_item['relative_volume']
+                opportunity['signals'].append({
+                    'type': 'high_volume',
+                    'value': vol_item['relative_volume'],
+                    'description': f"Volume {vol_item['relative_volume']:.2f}x average"
+                })
+                score += min(vol_item['relative_volume'] - 1, 3)  # Cap at 3 points
+            
+            # Check for high ATR
+            if symbol in atr_lookup:
+                atr_item = atr_lookup[symbol]
+                opportunity['atr_ratio'] = atr_item['atr_ratio']
+                opportunity['signals'].append({
+                    'type': 'high_atr',
+                    'value': atr_item['atr_ratio'],
+                    'description': f"ATR {atr_item['atr_ratio']:.2f}x average"
+                })
+                score += min(atr_item['atr_ratio'] - 1, 3)  # Cap at 3 points
+            
+            # Check for catalysts
+            if symbol in catalyst_lookup:
+                cat_item = catalyst_lookup[symbol]
+                opportunity['catalyst'] = cat_item['catalyst_type']
+                opportunity['signals'].append({
+                    'type': 'catalyst',
+                    'value': 1,
+                    'description': f"Catalyst: {', '.join(cat_item['catalyst_type'])}"
+                })
+                score += 3  # Fixed score for having a catalyst
+            
+            # Check for relative strength
+            if symbol in strength_lookup:
+                str_item = strength_lookup[symbol]
+                opportunity['relative_strength'] = str_item['relative_strength']
+                opportunity['strength_percentile'] = str_item['percentile']
+                
+                # Add signal if in top 25%
+                if str_item['percentile'] >= 75:
+                    opportunity['signals'].append({
+                        'type': 'high_strength',
+                        'value': str_item['percentile'],
+                        'description': f"Strong relative performance (top {100-str_item['percentile']:.0f}%)"
+                    })
+                    score += min((str_item['percentile'] - 75) / 5, 3)  # Cap at 3 points
+            
+            # Add total score
+            opportunity['score'] = score
+            
+            # Add to opportunities if score is high enough
+            if score >= 3:  # Minimum score threshold
+                opportunities.append(opportunity)
+        
+        # Sort opportunities by score (descending)
+        opportunities.sort(key=lambda x: x['score'], reverse=True)
+        
+        return opportunities
+        
+    def get_all_stocks_by_significance(self, min_price=5, max_price=100, min_volume=500000):
+        """
+        Get all stocks in the universe ordered by their overall significance score
+        
+        Args:
+            min_price (float): Minimum stock price
+            max_price (float): Maximum stock price
+            min_volume (int): Minimum average daily volume
+            
+        Returns:
+            list: List of dictionaries with stock information ordered by significance
+        """
+        try:
+            logger.info("Getting all stocks ordered by significance")
+            
+            # Get stock universe
+            universe = self.market_data.get_stock_universe(min_price, max_price, min_volume)
+            logger.info(f"Found {len(universe)} stocks in universe")
+            
+            # Get data for all stocks
+            stock_data = {}
+            for symbol in universe:
+                try:
+                    # Get basic data
+                    data = self.market_data.get_stock_data(symbol, period="5d", interval="1d")
+                    if data.empty:
+                        continue
+                    
+                    # Calculate basic metrics
+                    current_price = data['Close'].iloc[-1]
+                    prev_close = data['Close'].iloc[-2] if len(data) > 1 else data['Close'].iloc[0]
+                    deviation_pct = ((current_price - prev_close) / prev_close) * 100
+                    
+                    # Get volume data
+                    rel_volume = self.market_data.get_relative_volume(symbol)
+                    
+                    # Calculate ATR
+                    atr = self.atr_calculator.calculate_atr(data, period=5)
+                    atr_value = atr.iloc[-1] if not atr.empty and len(atr) > 0 else 0
+                    atr_percentage = (atr_value / current_price) * 100 if current_price > 0 else 0
+                    
+                    # Store data
+                    stock_data[symbol] = {
+                        'symbol': symbol,
+                        'price': current_price,
+                        'deviation_pct': deviation_pct,
+                        'direction': 'up' if deviation_pct > 0 else 'down',
+                        'relative_volume': rel_volume,
+                        'atr_percentage': atr_percentage,
+                        'volume': data['Volume'].iloc[-1]
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Error processing {symbol}: {str(e)}")
+            
+            # Calculate significance score for each stock
+            results = []
+            for symbol, data in stock_data.items():
+                # Calculate a composite significance score
+                significance = (
+                    abs(data['deviation_pct']) * 0.5 +  # Price deviation (50% weight)
+                    (data['relative_volume'] - 1) * 30 if data['relative_volume'] > 1 else 0 +  # Volume (30% weight)
+                    data['atr_percentage'] * 0.2  # Volatility (20% weight)
+                )
+                
+                # Add significance score to data
+                data['significance'] = significance
+                results.append(data)
+            
+            # Sort by significance score (descending)
+            results.sort(key=lambda x: x['significance'], reverse=True)
+            
+            logger.info(f"Processed {len(results)} stocks by significance")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error getting stocks by significance: {str(e)}")
+            return []
+    
+    def get_metric_tooltips(self):
+        """
+        Get tooltip information for all metrics used in the stock scanner
+        
+        Returns:
+            dict: Dictionary with metric names as keys and tooltip information as values
+        """
+        return {
+            'price_deviation': {
+                'title': 'Price Deviation',
+                'description': 'The percentage change in price compared to the previous close.',
+                'interpretation': 'Higher absolute values (>4%) indicate significant price movement. Positive values show upward movement, negative values show downward movement.'
+            },
+            'relative_volume': {
+                'title': 'Relative Volume',
+                'description': 'Today\'s volume compared to the average daily volume.',
+                'interpretation': 'Values above 1.5 indicate higher than normal trading activity. Higher values suggest stronger interest in the stock.'
+            },
+            'atr': {
+                'title': 'Average True Range (ATR)',
+                'description': 'A measure of stock volatility over a specified period.',
+                'interpretation': 'Higher values indicate more volatility. ATR is useful for setting stop losses and determining position sizes.'
+            },
+            'atr_percentage': {
+                'title': 'ATR Percentage',
+                'description': 'ATR as a percentage of the stock price.',
+                'interpretation': 'Normalizes ATR across different price levels. Higher values indicate more volatile stocks relative to their price.'
+            },
+            'atr_ratio': {
+                'title': 'ATR Ratio',
+                'description': 'The ratio of a stock\'s ATR percentage to the average ATR percentage of all stocks.',
+                'interpretation': 'Values above 1 indicate above-average volatility. Higher values suggest potential for larger price swings.'
+            },
+            'relative_strength': {
+                'title': 'Relative Strength',
+                'description': 'The percentage price change over a specified period (typically 13 weeks).',
+                'interpretation': 'Higher values indicate stronger performance. Stocks with positive values are outperforming, while negative values show underperformance.'
+            },
+            'strength_percentile': {
+                'title': 'Strength Percentile',
+                'description': 'The percentile rank of a stock\'s relative strength compared to other stocks.',
+                'interpretation': 'Values above 75 indicate top-performing stocks. Higher percentiles suggest stronger momentum.'
+            },
+            'significance': {
+                'title': 'Significance Score',
+                'description': 'A composite score based on price deviation, volume, and volatility.',
+                'interpretation': 'Higher values indicate stocks with more significant market activity. Useful for identifying stocks that deserve attention.'
+            },
+            'score': {
+                'title': 'Opportunity Score',
+                'description': 'A weighted score based on multiple factors including price deviation, volume, ATR, catalysts, and relative strength.',
+                'interpretation': 'Higher scores indicate more compelling trading opportunities. Scores above 10 suggest strong potential.'
+            },
+            'catalyst': {
+                'title': 'Catalyst',
+                'description': 'Significant news or events that could impact the stock price.',
+                'interpretation': 'The presence of catalysts often explains price movements and may indicate potential for continued movement.'
+            },
+            'volume': {
+                'title': 'Volume',
+                'description': 'The number of shares traded during the current period.',
+                'interpretation': 'Higher values indicate more trading activity. Volume confirms price movements - strong moves with high volume are more reliable.'
+            },
+            'avg_volume': {
+                'title': 'Average Volume',
+                'description': 'The average number of shares traded daily over a specified period.',
+                'interpretation': 'Used as a baseline to measure current trading activity. Higher values indicate more liquid stocks.'
+            }
+        }
+    
+    def format_tooltip_for_streamlit(self, metric_name):
+        """
+        Format tooltip information for display in Streamlit
+        
+        Args:
+            metric_name (str): Name of the metric to get tooltip for
+            
+        Returns:
+            str: Formatted tooltip text for Streamlit
+        """
+        tooltips = self.get_metric_tooltips()
+        
+        if metric_name in tooltips:
+            info = tooltips[metric_name]
+            return f"""
+            **{info['title']}**
+            
+            {info['description']}
+            
+            *Interpretation:* {info['interpretation']}
+            """
+        else:
+            return f"Information about {metric_name}"

@@ -239,6 +239,13 @@ class TradingStrategy:
             potential_loss = position_size * abs(entry_price - stop_loss)
             potential_profit = position_size * abs(entry_price - take_profit)
             
+            # Handle different key names for deviation percentage
+            deviation_pct = 0
+            if 'deviation_pct' in opportunity:
+                deviation_pct = opportunity['deviation_pct']
+            elif 'deviation' in opportunity:
+                deviation_pct = opportunity['deviation']
+            
             # Create trade plan
             trade_plan = {
                 'symbol': symbol,
@@ -250,8 +257,8 @@ class TradingStrategy:
                 'potential_loss': potential_loss,
                 'potential_profit': potential_profit,
                 'risk_reward_ratio': self.risk_reward_ratio,
-                'score': opportunity['score'],
-                'deviation_pct': opportunity['deviation_pct'],
+                'score': opportunity.get('score', 0),
+                'deviation_pct': deviation_pct,
                 'has_catalyst': opportunity.get('has_catalyst', False),
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
@@ -263,7 +270,7 @@ class TradingStrategy:
             return trade_plan
             
         except Exception as e:
-            logger.error(f"Error generating trade plan: {str(e)}")
+            logger.error(f"Error generating trade plan for {opportunity.get('symbol', 'unknown')}: {str(e)}")
             return None
     
     def generate_trade_plans(self, opportunities, max_plans=5):

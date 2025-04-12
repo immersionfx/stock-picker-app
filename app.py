@@ -483,5 +483,380 @@ def display_stock_details(symbol):
                         y=trade_plan['take_profit'],
                         line_dash="dash",
                         line_color="green",
+                        annotation_text="Take Profit",
+                        annotation_position="right"
+                    )
+
+                    # Update layout
+                    fig.update_layout(
+                        title=f'{symbol} Trade Plan',
+                        xaxis_title='Time',
+                        yaxis_title='Price',
+                        height=400,
+                        margin=dict(l=50, r=50, t=50, b=50)
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No trade plan available for this stock")
         
-(Content truncated due to size limit. Use line ranges to read in chunks)
+        except Exception as e:
+            st.error(f"Error displaying trade plan: {str(e)}")
+
+def display_scan_results():
+    """Display stock scanner results"""
+    st.markdown("<h2 class='sub-header'>Scan Results</h2>", unsafe_allow_html=True)
+    
+    # Check if we have scan results
+    if 'scan_results' not in st.session_state:
+        st.info("No scan results available. Run a scan to see results.")
+        return
+    
+    scan_results = st.session_state['scan_results']
+    trade_plans = st.session_state.get('trade_plans', [])
+    last_scan_time = st.session_state.get('last_scan_time', 'Unknown')
+    
+    # Display scan summary
+    st.markdown(f"<p>Last scan: {last_scan_time}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p>Universe size: {scan_results.get('universe_size', 0)} stocks</p>", unsafe_allow_html=True)
+    
+    # Create tabs for different result types
+    tabs = st.tabs(["Trading Opportunities", "Price Deviation", "High Volume", "High ATR", "Catalysts", "All Stocks"])
+    
+    with tabs[0]:  # Trading Opportunities
+        opportunities = scan_results.get('opportunities', [])
+        
+        if opportunities:
+            # Create a dataframe for display
+            df = pd.DataFrame(opportunities)
+            
+            # Add trade plan info
+            df['trade_plan'] = df['symbol'].apply(
+                lambda x: next((True for plan in trade_plans if plan['symbol'] == x), False)
+            )
+            
+            # Display as a table
+            st.dataframe(
+                df[['symbol', 'price', 'direction', 'score', 'trade_plan']],
+                column_config={
+                    'symbol': 'Symbol',
+                    'price': st.column_config.NumberColumn('Price', format="$%.2f"),
+                    'direction': 'Direction',
+                    'score': st.column_config.NumberColumn('Score', format="%.1f"),
+                    'trade_plan': st.column_config.CheckboxColumn('Trade Plan')
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Allow user to select a stock for detailed view
+            selected_symbol = st.selectbox(
+                "Select a stock for detailed view",
+                options=[item['symbol'] for item in opportunities]
+            )
+            
+            if selected_symbol:
+                display_stock_details(selected_symbol)
+        else:
+            st.info("No trading opportunities found")
+    
+    with tabs[1]:  # Price Deviation
+        deviation_results = scan_results.get('deviation_results', [])
+        
+        if deviation_results:
+            # Create a dataframe for display
+            df = pd.DataFrame(deviation_results)
+            
+            # Display as a table
+            st.dataframe(
+                df[['symbol', 'current_price', 'deviation_pct', 'direction']],
+                column_config={
+                    'symbol': 'Symbol',
+                    'current_price': st.column_config.NumberColumn('Price', format="$%.2f"),
+                    'deviation_pct': st.column_config.NumberColumn('Deviation', format="%.2f%%"),
+                    'direction': 'Direction'
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Allow user to select a stock for detailed view
+            selected_symbol = st.selectbox(
+                "Select a stock for detailed view",
+                options=[item['symbol'] for item in deviation_results],
+                key="deviation_select"
+            )
+            
+            if selected_symbol:
+                display_stock_details(selected_symbol)
+        else:
+            st.info("No stocks with significant price deviation found")
+    
+    with tabs[2]:  # High Volume
+        volume_results = scan_results.get('volume_results', [])
+        
+        if volume_results:
+            # Create a dataframe for display
+            df = pd.DataFrame(volume_results)
+            
+            # Display as a table
+            st.dataframe(
+                df[['symbol', 'current_price', 'relative_volume', 'volume']],
+                column_config={
+                    'symbol': 'Symbol',
+                    'current_price': st.column_config.NumberColumn('Price', format="$%.2f"),
+                    'relative_volume': st.column_config.NumberColumn('Relative Volume', format="%.2fx"),
+                    'volume': st.column_config.NumberColumn('Volume', format="%d")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Allow user to select a stock for detailed view
+            selected_symbol = st.selectbox(
+                "Select a stock for detailed view",
+                options=[item['symbol'] for item in volume_results],
+                key="volume_select"
+            )
+            
+            if selected_symbol:
+                display_stock_details(selected_symbol)
+        else:
+            st.info("No stocks with high relative volume found")
+    
+    with tabs[3]:  # High ATR
+        atr_results = scan_results.get('atr_results', [])
+        
+        if atr_results:
+            # Create a dataframe for display
+            df = pd.DataFrame(atr_results)
+            
+            # Check available columns and use appropriate ones
+            columns_to_display = []
+            if 'symbol' in df.columns:
+                columns_to_display.append('symbol')
+            
+            # Use 'price' instead of 'current_price' if it exists
+            if 'price' in df.columns:
+                columns_to_display.append('price')
+            elif 'current_price' in df.columns:
+                columns_to_display.append('current_price')
+            
+            # Add other columns if they exist
+            for col in ['atr', 'atr_percentage', 'atr_ratio']:
+                if col in df.columns:
+                    columns_to_display.append(col)
+            
+            # Display as a table with available columns
+            st.dataframe(
+                df[columns_to_display],
+                column_config={
+                    'symbol': 'Symbol',
+                    'price': st.column_config.NumberColumn('Price', format="$%.2f"),
+                    'current_price': st.column_config.NumberColumn('Price', format="$%.2f"),
+                    'atr': st.column_config.NumberColumn('ATR', format="$%.2f"),
+                    'atr_percentage': st.column_config.NumberColumn('ATR %', format="%.2f%%"),
+                    'atr_ratio': st.column_config.NumberColumn('ATR Ratio', format="%.2fx")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Allow user to select a stock for detailed view
+            selected_symbol = st.selectbox(
+                "Select a stock for detailed view",
+                options=[item['symbol'] for item in atr_results],
+                key="atr_select"
+            )
+            
+            if selected_symbol:
+                display_stock_details(selected_symbol)
+        else:
+            st.info("No stocks with high ATR found")
+    
+    with tabs[4]:  # Catalysts
+        catalyst_results = scan_results.get('catalyst_results', [])
+        
+        if catalyst_results:
+            # Create a dataframe for display
+            df = pd.DataFrame(catalyst_results)
+            
+            # Display as a table
+            st.dataframe(
+                df[['symbol', 'has_catalyst', 'catalyst_type']],
+                column_config={
+                    'symbol': 'Symbol',
+                    'has_catalyst': st.column_config.CheckboxColumn('Has Catalyst'),
+                    'catalyst_type': 'Catalyst Type'
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Allow user to select a stock for detailed view
+            selected_symbol = st.selectbox(
+                "Select a stock for detailed view",
+                options=[item['symbol'] for item in catalyst_results],
+                key="catalyst_select"
+            )
+            
+            if selected_symbol:
+                display_stock_details(selected_symbol)
+        else:
+            st.info("No stocks with potential catalysts found")
+    
+    with tabs[5]:  # All Stocks
+        # Get all stocks by significance
+        if 'all_stocks' not in st.session_state:
+            with st.spinner('Loading all stocks...'):
+                min_price = st.session_state.get('min_price', 5)
+                max_price = st.session_state.get('max_price', 100)
+                min_volume = st.session_state.get('min_volume', 500000)
+                
+                all_stocks = scanner.get_all_stocks_by_significance(
+                    min_price=min_price,
+                    max_price=max_price,
+                    min_volume=min_volume
+                )
+                
+                st.session_state['all_stocks'] = all_stocks
+        else:
+            all_stocks = st.session_state['all_stocks']
+        
+        if all_stocks:
+            # Create a dataframe for display
+            df = pd.DataFrame(all_stocks)
+            
+            # Display as a table
+            st.dataframe(
+                df[['symbol', 'price', 'deviation_pct', 'direction', 'relative_volume', 'atr_percentage', 'significance']],
+                column_config={
+                    'symbol': 'Symbol',
+                    'price': st.column_config.NumberColumn('Price', format="$%.2f"),
+                    'deviation_pct': st.column_config.NumberColumn('Deviation', format="%.2f%%"),
+                    'direction': 'Direction',
+                    'relative_volume': st.column_config.NumberColumn('Rel Volume', format="%.2fx"),
+                    'atr_percentage': st.column_config.NumberColumn('ATR %', format="%.2f%%"),
+                    'significance': st.column_config.NumberColumn('Significance', format="%.2f")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Allow user to select a stock for detailed view
+            selected_symbol = st.selectbox(
+                "Select a stock for detailed view",
+                options=[item['symbol'] for item in all_stocks],
+                key="all_stocks_select"
+            )
+            
+            if selected_symbol:
+                display_stock_details(selected_symbol)
+        else:
+            st.info("No stocks found")
+
+def main():
+    """Main function to run the app"""
+    # Set up the header
+    st.markdown("<h1 class='main-header'>Daily Stock Picker</h1>", unsafe_allow_html=True)
+    
+    # Sidebar
+    st.sidebar.markdown("<h2 class='main-header'>Stock Scanner</h2>", unsafe_allow_html=True)
+    
+    # Get tooltips from scanner
+    tooltips = scanner.get_metric_tooltips()
+    
+    # Price filter with tooltip
+    st.sidebar.subheader("Price Filter")
+    min_price = st.sidebar.number_input(
+        "Minimum Price ($)", 
+        min_value=1.0, 
+        max_value=1000.0, 
+        value=5.0,
+        step=1.0,
+        help=tooltips.get('price', {}).get('description', "Minimum stock price to include in scan.") if 'price' in tooltips else "Minimum stock price to include in scan."
+    )
+    
+    max_price = st.sidebar.number_input(
+        "Maximum Price ($)", 
+        min_value=1.0, 
+        max_value=10000.0, 
+        value=100.0,
+        step=10.0,
+        help=tooltips.get('price', {}).get('description', "Maximum stock price to include in scan.") if 'price' in tooltips else "Maximum stock price to include in scan."
+    )
+    
+    # Volume filter with tooltip
+    st.sidebar.subheader("Volume Filter")
+    min_volume = st.sidebar.number_input(
+        "Minimum Volume", 
+        min_value=10000, 
+        max_value=10000000, 
+        value=500000,
+        step=100000,
+        format="%d",
+        help=tooltips.get('volume', {}).get('description', "Minimum trading volume to include in scan.") if 'volume' in tooltips else "Minimum trading volume to include in scan."
+    )
+    
+    # Price deviation filter with tooltip
+    st.sidebar.subheader("Price Deviation")
+    min_deviation = st.sidebar.number_input(
+        "Minimum Deviation (%)", 
+        min_value=1.0, 
+        max_value=20.0, 
+        value=4.0,
+        step=0.5,
+        help=tooltips.get('price_deviation', {}).get('description', "Minimum price deviation percentage to flag a stock.") if 'price_deviation' in tooltips else "Minimum price deviation percentage to flag a stock."
+    )
+    
+    # Relative volume filter with tooltip
+    st.sidebar.subheader("Relative Volume")
+    min_rel_volume = st.sidebar.number_input(
+        "Minimum Relative Volume", 
+        min_value=1.0, 
+        max_value=10.0, 
+        value=1.5,
+        step=0.1,
+        help=tooltips.get('relative_volume', {}).get('description', "Minimum relative volume to flag a stock.") if 'relative_volume' in tooltips else "Minimum relative volume to flag a stock."
+    )
+    
+    # ATR filter with tooltip
+    st.sidebar.subheader("ATR Filter")
+    min_atr_ratio = st.sidebar.number_input(
+        "Minimum ATR Ratio", 
+        min_value=0.5, 
+        max_value=5.0, 
+        value=1.2,
+        step=0.1,
+        help=tooltips.get('atr_ratio', {}).get('description', "Minimum ATR ratio to flag a stock.") if 'atr_ratio' in tooltips else "Minimum ATR ratio to flag a stock."
+    )
+    
+    # Store filter values in session state
+    if st.sidebar.button("Apply Filters"):
+        st.session_state['min_price'] = min_price
+        st.session_state['max_price'] = max_price
+        st.session_state['min_volume'] = min_volume
+        st.session_state['min_deviation'] = min_deviation
+        st.session_state['min_rel_volume'] = min_rel_volume
+        st.session_state['min_atr_ratio'] = min_atr_ratio
+        
+        # Clear cached results
+        if 'all_stocks' in st.session_state:
+            del st.session_state['all_stocks']
+        
+        # Run scan with new filters
+        run_stock_scan()
+    
+    # Run scan button
+    if st.sidebar.button("Run Stock Scan"):
+        run_stock_scan()
+    
+    # Display last scan time
+    if 'last_scan_time' in st.session_state:
+        st.sidebar.markdown(f"Last scan: {st.session_state['last_scan_time']}")
+    
+    # Display scan results
+    display_scan_results()
+
+if __name__ == "__main__":
+    main()
