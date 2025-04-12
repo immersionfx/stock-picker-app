@@ -273,6 +273,9 @@ def run_stock_scan():
 
 def display_stock_details(symbol):
     """Display detailed information for a selected stock"""
+    # Add timestamp to make keys unique
+    unique_id = int(time.time() * 1000)
+    
     st.markdown(f"<h2 class='sub-header'>{symbol} Details</h2>", unsafe_allow_html=True)
     
     # Create tabs for different sections
@@ -285,7 +288,7 @@ def display_stock_details(symbol):
             # Price chart
             fig = create_price_chart(symbol)
             if fig:
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"price_chart_{symbol}_{unique_id}")
             else:
                 st.warning("Could not create price chart")
         
@@ -341,7 +344,7 @@ def display_stock_details(symbol):
             # ATR chart
             fig = create_atr_chart(symbol)
             if fig:
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"atr_chart_{symbol}_{unique_id}")
             else:
                 st.warning("Could not create ATR chart")
         
@@ -496,7 +499,7 @@ def display_stock_details(symbol):
                         margin=dict(l=50, r=50, t=50, b=50)
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key=f"trade_plan_chart_{symbol}_{unique_id}")
             else:
                 st.info("No trade plan available for this stock")
         
