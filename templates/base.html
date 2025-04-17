@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Daily Stock Picker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="logo">
+                <h1><i class="fas fa-chart-line"></i> Daily Stock Picker</h1>
+            </div>
+            <nav>
+                <ul>
+                    <li><a href="{{ url_for('index') }}">Dashboard</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <aside class="sidebar">
+            <div class="sidebar-content">
+                <h2>Stock Scanner</h2>
+                
+                <form action="{{ url_for('run_scan_route') }}" method="post" id="scan-form">
+                    <div class="filter-section">
+                        <h3>Price Filter</h3>
+                        <div class="form-group">
+                            <label for="min_price">
+                                Minimum Price ($)
+                                <i class="fas fa-info-circle tooltip-icon" 
+                                   data-tooltip="Minimum stock price to include in scan. Recommended: $5-$10 to avoid penny stocks."></i>
+                            </label>
+                            <input type="number" id="min_price" name="min_price" min="1" max="1000" step="1" value="{{ min_price }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="max_price">
+                                Maximum Price ($)
+                                <i class="fas fa-info-circle tooltip-icon" 
+                                   data-tooltip="Maximum stock price to include in scan. Recommended: $50-$100 for better risk management."></i>
+                            </label>
+                            <input type="number" id="max_price" name="max_price" min="1" max="10000" step="1" value="{{ max_price }}">
+                        </div>
+                    </div>
+
+                    <div class="filter-section">
+                        <h3>Volume Filter</h3>
+                        <div class="form-group">
+                            <label for="min_volume">
+                                Minimum Volume
+                                <i class="fas fa-info-circle tooltip-icon" 
+                                   data-tooltip="Minimum daily trading volume. Higher volume (>500,000) indicates better liquidity. Recommended: 500,000-1,000,000."></i>
+                            </label>
+                            <input type="number" id="min_volume" name="min_volume" min="10000" max="10000000" step="100" value="{{ min_volume }}">
+                        </div>
+                    </div>
+
+                    <div class="filter-section">
+                        <h3>Price Deviation</h3>
+                        <div class="form-group">
+                            <label for="min_deviation">
+                                Minimum Deviation (%)
+                                <i class="fas fa-info-circle tooltip-icon" 
+                                   data-tooltip="Minimum price movement percentage to identify volatile stocks. Recommended: 3-5% for regular trading, 5-10% for more aggressive strategies."></i>
+                            </label>
+                            <input type="number" id="min_deviation" name="min_deviation" min="1" max="20" step="0.5" value="{{ min_deviation }}">
+                        </div>
+                    </div>
+
+                    <div class="button-group">
+                        <button type="submit" class="btn btn-primary">Run Stock Scan</button>
+                        <button type="button" class="btn btn-secondary" id="save-filters">Save Filters</button>
+                    </div>
+                </form>
+
+                <div class="scan-info">
+                    <p>Last scan: {{ last_scan_time }}</p>
+                </div>
+            </div>
+        </aside>
+
+        <main class="content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; {{ current_year }} Stock Picker App. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+    <script>
+        document.getElementById('save-filters').addEventListener('click', function(e) {
+            e.preventDefault();
+            const formData = new FormData(document.getElementById('scan-form'));
+            
+            fetch('/save_filters', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Filters saved successfully');
+                } else {
+                    alert('Failed to save filters: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to save filters');
+            });
+        });
+    </script>
+</body>
+</html>

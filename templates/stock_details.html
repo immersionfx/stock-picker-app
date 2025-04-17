@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}{{ symbol }} - Stock Details{% endblock %}
+
+{% block content %}
+<div class="stock-details">
+    <h2 class="section-title">{{ symbol }} Details</h2>
+
+    <div class="tabs">
+        <div class="tab-header">
+            <button class="tab-btn active" data-tab="price-chart">Price Chart</button>
+            <button class="tab-btn" data-tab="technical">Technical Analysis</button>
+            <button class="tab-btn" data-tab="news">News</button>
+            <button class="tab-btn" data-tab="trade-plan">Trade Plan</button>
+        </div>
+
+        <div class="tab-content">
+            <!-- Price Chart Tab -->
+            <div class="tab-pane active" id="price-chart">
+                <div class="chart-container">
+                    <div class="row">
+                        <div class="col-75">
+                            {% if price_chart %}
+                                <div id="price-chart-div" class="chart"></div>
+                            {% else %}
+                                <div class="warning-message">Could not create price chart</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-25">
+                            <div class="metrics-container">
+                                <div class="metric-card">
+                                    <div class="metric-label">Current Price</div>
+                                    <div class="metric-value">{{ stock_metrics.current_price }}</div>
+                                    <div class="metric-change {{ 'up-value' if stock_metrics.change_pct.startswith('+') else 'down-value' }}">{{ stock_metrics.change_pct }}</div>
+                                </div>
+
+                                <div class="metric-card">
+                                    <div class="metric-label">Volume</div>
+                                    <div class="metric-value">{{ stock_metrics.volume }}</div>
+                                </div>
+
+                                <div class="metric-card">
+                                    <div class="metric-label">Relative Volume</div>
+                                    <div class="metric-value">{{ stock_metrics.rel_volume }}</div>
+                                </div>
+
+                                <div class="metric-card">
+                                    <div class="metric-label">Day High</div>
+                                    <div class="metric-value">{{ stock_metrics.day_high }}</div>
+                                </div>
+
+                                <div class="metric-card">
+                                    <div class="metric-label">Day Low</div>
+                                    <div class="metric-value">{{ stock_metrics.day_low }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Technical Analysis Tab -->
+            <div class="tab-pane" id="technical">
+                <div class="row">
+                    <div class="col-50">
+                        {% if atr_chart %}
+                            <div id="atr-chart-div" class="chart"></div>
+                        {% else %}
+                            <div class="warning-message">Could not create ATR chart</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-50">
+                        <div class="metrics-container">
+                            <div class="metric-card">
+                                <div class="metric-label">ATR</div>
+                                <div class="metric-value">{{ tech_indicators.atr }}</div>
+                                <div class="metric-subtext">{{ tech_indicators.atr_pct }}</div>
+                            </div>
+
+                            <div class="metric-card">
+                                <div class="metric-label">13-Week Relative Strength</div>
+                                <div class="metric-value">{{ tech_indicators.rel_strength }}</div>
+                                <div class="metric-subtext">Percentile: {{ tech_indicators.percentile }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- News Tab -->
+            <div class="tab-pane" id="news">
+                {% if news_items %}
+                    <div class="news-container">
+                        {% for item in news_items %}
+                            <div class="card card-blue">
+                                <h4>{{ item.title }}</h4>
+                                <p>Publisher: {{ item.publisher }} | Date: {{ item.publish_date }}</p>
+                                <a href="{{ item.link }}" target="_blank" class="btn btn-sm">Read more</a>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="info-message">No recent news found</div>
+                {% endif %}
+
+                {% if catalyst_info and catalyst_info.has_catalyst %}
+                    <div class="card card-yellow">
+                        <h4>Potential Catalyst Detected</h4>
+                        <p>Type: {{ catalyst_info.catalyst_type|join(', ') }}</p>
+                        <p>News: {{ catalyst_info.news_item.title }}</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Trade Plan Tab -->
+            <div class="tab-pane" id="trade-plan">
+                {% if trade_plan %}
+                    <div class="row">
+                        <div class="col-50">
+                            <div class="card card-{{ 'green' if trade_plan.direction == 'long' else 'red' }}">
+                                <h3>{{ trade_plan.direction|upper }} {{ symbol }}</h3>
+                                <p><b>Entry:</b> ${{ "%.2f"|format(trade_plan.entry_price) }}</p>
+                                <p><b>Stop Loss:</b> ${{ "%.2f"|format(trade_plan.stop_loss) }}</p>
+                                <p><b>Take Profit:</b> ${{ "%.2f"|format(trade_plan.take_profit) }}</p>
+                                <p><b>Position Size:</b> {{ trade_plan.position_size }} shares</p>
+                            </div>
+                        </div>
+                        <div class="col-50">
+                            <div class="card card-blue">
+                                <h3>Risk Analysis</h3>
+                                <p><b>Potential Loss:</b> ${{ "%.2f"|format(trade_plan.potential_loss) }}</p>
+                                <p><b>Potential Profit:</b> ${{ "%.2f"|format(trade_plan.potential_profit) }}</p>
+                                <p><b>Risk-Reward Ratio:</b> 1:{{ "%.1f"|format(trade_plan.risk_reward_ratio) }}</p>
+                                <p><b>Score:</b> {{ "%.1f"|format(trade_plan.score) }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if trade_plan_chart %}
+                        <div id="trade-plan-chart-div" class="chart"></div>
+                    {% endif %}
+                {% else %}
+                    <div class="info-message">No trade plan available for this stock</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Store chart instances and cleanup functions
+        const chartInstances = {};
+        const cleanupFunctions = [];
+
+        // Tab functionality
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                // Remove active class from all buttons and panes
+                tabBtns.forEach(b => b.classList.remove('active'));
+                tabPanes.forEach(p => p.classList.remove('active'));
+                
+                // Add active class to clicked button and corresponding pane
+                this.classList.add('active');
+                const activePane = document.getElementById(this.dataset.tab);
+                if (activePane) {
+                    activePane.classList.add('active');
+                    // Redraw chart when tab becomes visible
+                    const chartId = `${this.dataset.tab}-div`;
+                    if (chartInstances[chartId]) {
+                        Plotly.Plots.resize(chartId);
+                    }
+                }
+            });
+        });
+
+        // Chart initialization helper
+        function initChart(chartId, chartData) {
+            try {
+                const chart = Plotly.newPlot(chartId, chartData.data, chartData.layout);
+                chartInstances[chartId] = chart;
+                
+                const resizeHandler = () => Plotly.Plots.resize(chartId);
+                window.addEventListener('resize', resizeHandler);
+                cleanupFunctions.push(() => {
+                    window.removeEventListener('resize', resizeHandler);
+                });
+            } catch (error) {
+                console.error(`Failed to render ${chartId}:`, error);
+                const container = document.getElementById(chartId);
+                if (container) {
+                    container.innerHTML = '<div class="error-message">Failed to load chart</div>';
+                }
+            }
+        }
+
+        // Initialize Plotly charts
+        {% if price_chart %}
+            initChart('price-chart-div', {{ price_chart|tojson }});
+        {% endif %}
+
+        {% if atr_chart %}
+            initChart('atr-chart-div', {{ atr_chart|tojson }});
+        {% endif %}
+
+        {% if trade_plan_chart %}
+            initChart('trade-plan-chart-div', {{ trade_plan_chart|tojson }});
+        {% endif %}
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            cleanupFunctions.forEach(fn => fn());
+            Object.values(chartInstances).forEach(chart => {
+                Plotly.purge(chart);
+            });
+        });
+    });
+</script>
+{% endblock %}

@@ -39,7 +39,7 @@ pip install -r requirements.txt
 To start the Stock Picker application:
 
 ```bash
-python main.py
+python app.py
 ```
 
 This will launch the Streamlit web interface in your default browser. If the browser doesn't open automatically, you can access the application at http://localhost:8501.

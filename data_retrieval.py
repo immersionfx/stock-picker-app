@@ -171,6 +171,7 @@ class MarketDataFetcher:
                         avg_price = data['Close'].mean()
                         avg_volume = data['Volume'].mean()
                         
+                        # Adjusted max_price step to 1
                         if (min_price <= avg_price <= max_price and avg_volume >= min_volume):
                             filtered_symbols.append(symbol)
                 except Exception as e:

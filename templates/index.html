@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+
+{% block title %}Daily Stock Picker - Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h2 class="section-title">Scan Results</h2>
+    <div id="scan-results-section">
+    
+    <div class="scan-summary">
+        <p>Last scan: {{ last_scan_time }}</p>
+        <p>Universe size: {{ scan_results.universe_size|default(0) }} stocks</p>
+    </div>
+
+    <div class="tabs">
+        <div class="tab-header">
+            <button class="tab-btn active" data-tab="opportunities">Trading Opportunities</button>
+            <button class="tab-btn" data-tab="deviation">Price Deviation</button>
+            <button class="tab-btn" data-tab="volume">High Volume</button>
+            <button class="tab-btn" data-tab="atr">High ATR</button>
+            <button class="tab-btn" data-tab="catalysts">Catalysts</button>
+        </div>
+
+        <div class="tab-content">
+            <!-- Trading Opportunities Tab -->
+            <div class="tab-pane active" id="opportunities">
+                {% if scan_results.opportunities %}
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Price</th>
+                                    <th>Direction</th>
+                                    <th>Score</th>
+                                    <th>Trade Plan</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in scan_results.opportunities %}
+                                <tr>
+                                    <td>{{ item.symbol }}</td>
+                                    <td>${{ "%.2f"|format(item.price) }}</td>
+                                    <td class="{{ 'up-value' if item.direction == 'up' else 'down-value' }}">{{ item.direction }}</td>
+                                    <td>{{ "%.1f"|format(item.score) }}</td>
+                                    <td>
+                                        {% set has_plan = false %}
+                                        {% for plan in trade_plans %}
+                                            {% if plan.symbol == item.symbol %}
+                                                {% set has_plan = true %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        <span class="{{ 'yes' if has_plan else 'no' }}">{{ 'Yes' if has_plan else 'No' }}</span>
+                                    </td>
+                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="info-message">No trading opportunities found</div>
+                {% endif %}
+            </div>
+
+            <!-- Price Deviation Tab -->
+            <div class="tab-pane" id="deviation">
+                {% if scan_results.deviation_results %}
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Price</th>
+                                    <th>Deviation</th>
+                                    <th>Direction</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in scan_results.deviation_results %}
+                                <tr>
+                                    <td>{{ item.symbol }}</td>
+                                    <td>${{ "%.2f"|format(item.current_price) }}</td>
+                                    <td>{{ "%.2f"|format(item.deviation_pct) }}%</td>
+                                    <td class="{{ 'up-value' if item.direction == 'up' else 'down-value' }}">{{ item.direction }}</td>
+                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="info-message">No stocks with significant price deviation found</div>
+                {% endif %}
+            </div>
+
+            <!-- High Volume Tab -->
+            <div class="tab-pane" id="volume">
+                {% if scan_results.volume_results %}
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Price</th>
+                                    <th>Relative Volume</th>
+                                    <th>Volume</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in scan_results.volume_results %}
+                                <tr>
+                                    <td>{{ item.symbol }}</td>
+                                    <td>${{ "%.2f"|format(item.current_price|default(0)) }}</td>
+                                    <td>{{ "%.2f"|format(item.relative_volume) }}x</td>
+                                    <td>{{ item.current_volume }}</td>
+                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="info-message">No stocks with high relative volume found</div>
+                {% endif %}
+            </div>
+
+            <!-- High ATR Tab -->
+            <div class="tab-pane" id="atr">
+                {% if scan_results.atr_results %}
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Price</th>
+                                    <th>ATR</th>
+                                    <th>ATR %</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in scan_results.atr_results %}
+                                <tr>
+                                    <td>{{ item.symbol }}</td>
+                                    <td>${{ "%.2f"|format(item.price if item.price is defined else item.current_price) }}</td>
+                                    <td>${{ "%.2f"|format(item.atr) }}</td>
+                                    <td>{{ "%.2f"|format(item.atr_percentage) }}%</td>
+                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="info-message">No stocks with high ATR found</div>
+                {% endif %}
+            </div>
+
+            <!-- Catalysts Tab -->
+            <div class="tab-pane" id="catalysts">
+                {% if scan_results.catalyst_results %}
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Has Catalyst</th>
+                                    <th>Catalyst Type</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in scan_results.catalyst_results %}
+                                <tr>
+                                    <td>{{ item.symbol }}</td>
+                                    <td><span class="{{ 'yes' if item.has_catalyst else 'no' }}">{{ 'Yes' if item.has_catalyst else 'No' }}</span></td>
+                                    <td>{{ item.catalyst_type|join(', ') }}</td>
+                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="info-message">No stocks with potential catalysts found</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    </div>
+    
+    <div id="stock-details-section" style="display: none;">
+        <h2 class="section-title">Stock Details</h2>
+        <div class="stock-details">
+            <div class="tabs">
+                <div class="tab-header">
+                    <button class="tab-btn active" data-tab="price-chart">Price Chart</button>
+                    <button class="tab-btn" data-tab="technical">Technical Analysis</button>
+                    <button class="tab-btn" data-tab="news">News</button>
+                    <button class="tab-btn" data-tab="trade-plan">Trade Plan</button>
+                </div>
+                <div class="tab-content" id="details-content">
+                    <!-- Content will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Tab functionality for both scan results and stock details
+        function initTabs(container) {
+            const tabBtns = container.querySelectorAll('.tab-btn');
+            const tabPanes = container.querySelectorAll('.tab-pane');
+            
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // Remove active class from all buttons and panes in this container
+                    tabBtns.forEach(b => b.classList.remove('active'));
+                    tabPanes.forEach(p => p.classList.remove('active'));
+                    
+                    // Add active class to clicked button and corresponding pane
+                    this.classList.add('active');
+                    const pane = container.querySelector(`#${this.dataset.tab}`);
+                    if (pane) pane.classList.add('active');
+                });
+            });
+        }
+
+        // Initialize tabs for scan results
+        initTabs(document.querySelector('.dashboard .tabs'));
+        
+        // Handle Details button clicks
+        document.querySelectorAll('a.btn[href*="stock_details"]').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const symbol = this.href.split('/').pop();
+                const detailsSection = document.getElementById('stock-details-section');
+                const scanResultsSection = document.getElementById('scan-results-section');
+                
+                // Show loading state
+                detailsSection.style.display = 'block';
+                document.getElementById('details-content').innerHTML = '<div class="loading">Loading details...</div>';
+                
+                // Fetch stock details
+                fetch(`/stock_details/${symbol}`)
+                    .then(response => response.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const content = doc.querySelector('.tab-content');
+                        
+                        if (content) {
+                            document.getElementById('details-content').innerHTML = content.innerHTML;
+                            // Initialize tabs for stock details
+                            initTabs(detailsSection.querySelector('.tabs'));
+                            
+                            // Initialize any charts if present
+                            if (typeof Plotly !== 'undefined') {
+                                const charts = doc.querySelectorAll('.chart');
+                                charts.forEach(chart => {
+                                    if (chart.dataset.chartData) {
+                                        const chartData = JSON.parse(chart.dataset.chartData);
+                                        Plotly.newPlot(chart.id, chartData.data, chartData.layout);
+                                    }
+                                });
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        document.getElementById('details-content').innerHTML = 
+                            '<div class="error-message">Failed to load stock details</div>';
+                        console.error('Error loading stock details:', error);
+                    });
+            });
+        });
+
+        // Form submission with AJAX
+        const scanForm = document.getElementById('scan-form');
+        scanForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(scanForm);
+            
+            fetch(scanForm.action, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = data.redirect;
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        });
+    });
+</script>
+{% endblock %}

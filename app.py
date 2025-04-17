@@ -1,20 +1,23 @@
-"""
-User Interface Module for Stock Picker Application
+"""User Interface Module for Stock Picker Application
 
-This module creates a Streamlit-based user interface for the Stock Picker app,
+This module creates a Flask-based user interface for the Stock Picker app,
 displaying stock scanner results and trading recommendations.
 """
 
-import streamlit as st
+from flask import Flask, render_template, request, jsonify, session
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+import plotly.utils
+import json
 from datetime import datetime, timedelta
 import time
 import logging
 import os
 import sys
+import threading
+import webbrowser
 
 # Import our modules
 from data_retrieval import MarketDataFetcher, NewsDataFetcher
@@ -34,68 +37,26 @@ news_data = NewsDataFetcher()
 scanner = StockScanner()
 strategy = TradingStrategy()
 
-# Page configuration
-st.set_page_config(
-    page_title="Daily Stock Picker",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Initialize Flask app
+app = Flask(__name__)
+app.secret_key = 'stock_picker_secret_key'  # For session management
 
-# Custom CSS
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1E88E5;
-        margin-bottom: 1rem;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #0D47A1;
-        margin-bottom: 0.5rem;
-    }
-    .card {
-        border-radius: 5px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .card-green {
-        background-color: rgba(76, 175, 80, 0.1);
-        border-left: 5px solid #4CAF50;
-    }
-    .card-red {
-        background-color: rgba(244, 67, 54, 0.1);
-        border-left: 5px solid #F44336;
-    }
-    .card-blue {
-        background-color: rgba(33, 150, 243, 0.1);
-        border-left: 5px solid #2196F3;
-    }
-    .card-yellow {
-        background-color: rgba(255, 193, 7, 0.1);
-        border-left: 5px solid #FFC107;
-    }
-    .metric-value {
-        font-size: 1.8rem;
-        font-weight: bold;
-    }
-    .metric-label {
-        font-size: 0.9rem;
-        color: #616161;
-    }
-    .up-value {
-        color: #4CAF50;
-    }
-    .down-value {
-        color: #F44336;
-    }
-    .highlight {
-        background-color: yellow;
-        padding: 0 2px;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Add template context processors
+@app.context_processor
+def inject_current_year():
+    return {'current_year': datetime.now().year}
+
+# Helper functions
+def format_large_number(num):
+    """Format large numbers with K, M, B suffixes"""
+    if num >= 1e9:
+        return f"{num/1e9:.2f}B"
+    elif num >= 1e6:
+        return f"{num/1e6:.2f}M"
+    elif num >= 1e3:
+        return f"{num/1e3:.2f}K"
+    else:
+        return f"{num:.2f}"
 
 def create_price_chart(symbol, period="5d", interval="15m", include_premarket=True):
     """
@@ -108,7 +69,7 @@ def create_price_chart(symbol, period="5d", interval="15m", include_premarket=Tr
         include_premarket (bool): Whether to include pre-market data
         
     Returns:
-        plotly.graph_objects.Figure: Price chart
+        JSON: Chart data for plotly
     """
     try:
         # Get stock data
@@ -174,7 +135,7 @@ def create_price_chart(symbol, period="5d", interval="15m", include_premarket=Tr
             )
         )
         
-        return fig
+        return json.loads(plotly.utils.PlotlyJSONEncoder().encode(fig))
         
     except Exception as e:
         logger.error(f"Error creating price chart for {symbol}: {str(e)}")
@@ -190,7 +151,7 @@ def create_atr_chart(symbol, period="20d", interval="1d"):
         interval (str): Data interval
         
     Returns:
-        plotly.graph_objects.Figure: ATR chart
+        JSON: Chart data for plotly
     """
     try:
         # Get stock data
@@ -227,31 +188,20 @@ def create_atr_chart(symbol, period="20d", interval="1d"):
             margin=dict(l=50, r=50, t=50, b=50)
         )
         
-        return fig
+        return json.loads(plotly.utils.PlotlyJSONEncoder().encode(fig))
         
     except Exception as e:
         logger.error(f"Error creating ATR chart for {symbol}: {str(e)}")
         return None
 
-def format_large_number(num):
-    """Format large numbers with K, M, B suffixes"""
-    if num >= 1e9:
-        return f"{num/1e9:.2f}B"
-    elif num >= 1e6:
-        return f"{num/1e6:.2f}M"
-    elif num >= 1e3:
-        return f"{num/1e3:.2f}K"
-    else:
-        return f"{num:.2f}"
-
 def run_stock_scan():
     """Run the stock scanner and return results"""
-    with st.spinner('Scanning for trading opportunities...'):
-        # Get filter parameters from session state
-        min_price = st.session_state.get('min_price', 5)
-        max_price = st.session_state.get('max_price', 100)
-        min_volume = st.session_state.get('min_volume', 500000)
-        min_deviation = st.session_state.get('min_deviation', 4.0)
+    try:
+        # Get filter parameters from session
+        min_price = session.get('min_price', 5)
+        max_price = session.get('max_price', 100)
+        min_volume = session.get('min_volume', 500000)
+        min_deviation = session.get('min_deviation', 4.0)
         
         # Run comprehensive scan
         scan_results = scanner.run_comprehensive_scan(
@@ -264,602 +214,303 @@ def run_stock_scan():
         opportunities = scan_results.get('opportunities', [])
         trade_plans = strategy.generate_trade_plans(opportunities)
         
-        # Store results in session state
-        st.session_state['scan_results'] = scan_results
-        st.session_state['trade_plans'] = trade_plans
-        st.session_state['last_scan_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # Store results in session
+        session['scan_results'] = scan_results
+        session['trade_plans'] = trade_plans
+        session['last_scan_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         return scan_results, trade_plans
+    except Exception as e:
+        logger.error(f"Error running stock scan: {str(e)}")
+        return {}, []
 
-def display_stock_details(symbol):
-    """Display detailed information for a selected stock"""
-    # Add timestamp to make keys unique
-    unique_id = int(time.time() * 1000)
-    
-    st.markdown(f"<h2 class='sub-header'>{symbol} Details</h2>", unsafe_allow_html=True)
-    
-    # Create tabs for different sections
-    tabs = st.tabs(["Price Chart", "Technical Analysis", "News", "Trade Plan"])
-    
-    with tabs[0]:  # Price Chart
-        col1, col2 = st.columns([3, 1])
+def create_trade_plan_chart(symbol, trade_plan):
+    """Create a chart with trade plan levels"""
+    try:
+        # Get stock data
+        data = market_data.get_stock_data(symbol, period="1d", interval="15m")
         
-        with col1:
-            # Price chart
-            fig = create_price_chart(symbol)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True, key=f"price_chart_{symbol}_{unique_id}")
-            else:
-                st.warning("Could not create price chart")
+        if data.empty:
+            return None
         
-        with col2:
-            # Stock info
-            try:
-                # Get stock data
-                data = market_data.get_stock_data(symbol, period="1d", interval="1d")
-                
-                if not data.empty:
-                    current_price = data['Close'].iloc[-1]
-                    prev_close = data['Open'].iloc[0]
-                    change = current_price - prev_close
-                    change_pct = (change / prev_close) * 100
-                    
-                    # Display metrics
-                    st.metric(
-                        label="Current Price",
-                        value=f"${current_price:.2f}",
-                        delta=f"{change_pct:.2f}%"
-                    )
-                    
-                    st.metric(
-                        label="Volume",
-                        value=format_large_number(data['Volume'].iloc[-1])
-                    )
-                    
-                    # Get relative volume
-                    rel_volume = market_data.get_relative_volume(symbol)
-                    st.metric(
-                        label="Relative Volume",
-                        value=f"{rel_volume:.2f}x"
-                    )
-                    
-                    # Display high and low
-                    st.metric(
-                        label="Day High",
-                        value=f"${data['High'].iloc[-1]:.2f}"
-                    )
-                    
-                    st.metric(
-                        label="Day Low",
-                        value=f"${data['Low'].iloc[-1]:.2f}"
-                    )
-            
-            except Exception as e:
-                st.error(f"Error getting stock info: {str(e)}")
+        # Create figure
+        fig = go.Figure()
+        
+        # Add candlestick chart
+        fig.add_trace(
+            go.Candlestick(
+                x=data.index,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=data['Close'],
+                name='Price'
+            )
+        )
+        
+        # Add horizontal lines for entry, stop loss, and take profit
+        fig.add_hline(
+            y=trade_plan['entry_price'],
+            line_dash="solid",
+            line_color="blue",
+            annotation_text="Entry",
+            annotation_position="right"
+        )
+        
+        fig.add_hline(
+            y=trade_plan['stop_loss'],
+            line_dash="dash",
+            line_color="red",
+            annotation_text="Stop Loss",
+            annotation_position="right"
+        )
+        
+        fig.add_hline(
+            y=trade_plan['take_profit'],
+            line_dash="dash",
+            line_color="green",
+            annotation_text="Take Profit",
+            annotation_position="right"
+        )
+        
+        # Update layout
+        fig.update_layout(
+            title=f'{symbol} Trade Plan',
+            xaxis_title='Time',
+            yaxis_title='Price',
+            height=400,
+            margin=dict(l=50, r=50, t=50, b=50)
+        )
+        
+        return json.loads(plotly.utils.PlotlyJSONEncoder().encode(fig))
     
-    with tabs[1]:  # Technical Analysis
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # ATR chart
-            fig = create_atr_chart(symbol)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True, key=f"atr_chart_{symbol}_{unique_id}")
-            else:
-                st.warning("Could not create ATR chart")
-        
-        with col2:
-            # Technical indicators
-            try:
-                # Get stock data
-                data = market_data.get_stock_data(symbol, period="20d", interval="1d")
-                
-                if not data.empty:
-                    # Calculate ATR
-                    atr = scanner.atr_calculator.calculate_atr(data)
-                    
-                    if not atr.empty:
-                        latest_atr = atr.iloc[-1]
-                        latest_price = data['Close'].iloc[-1]
-                        atr_percentage = (latest_atr / latest_price) * 100
-                        
-                        st.metric(
-                            label="ATR",
-                            value=f"${latest_atr:.2f}",
-                            delta=f"{atr_percentage:.2f}% of price"
-                        )
-                
-                # Get relative strength
-                strength_results = scanner.calculate_relative_strength([symbol])
-                
-                if strength_results:
-                    st.metric(
-                        label="13-Week Relative Strength",
-                        value=f"{strength_results[0]['relative_strength']:.2f}%",
-                        delta=f"Percentile: {strength_results[0]['percentile']:.2f}"
-                    )
-            
-            except Exception as e:
-                st.error(f"Error getting technical indicators: {str(e)}")
-    
-    with tabs[2]:  # News
-        try:
-            # Get news
-            news = news_data.get_stock_news(symbol, max_news=10)
-            
-            if news:
-                for item in news:
-                    with st.container():
-                        st.markdown(f"""
-                        <div class="card card-blue">
-                            <h4>{item['title']}</h4>
-                            <p>Publisher: {item['publisher']} | Date: {item['publish_date']}</p>
-                            <a href="{item['link']}" target="_blank">Read more</a>
-                        </div>
-                        """, unsafe_allow_html=True)
-            else:
-                st.info("No recent news found")
-            
-            # Check for catalyst
-            catalyst_info = news_data.check_for_catalyst(symbol)
-            
-            if catalyst_info.get('has_catalyst', False):
-                st.markdown(f"""
-                <div class="card card-yellow">
-                    <h4>Potential Catalyst Detected</h4>
-                    <p>Type: {', '.join(catalyst_info['catalyst_type'])}</p>
-                    <p>News: {catalyst_info['news_item']['title']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        except Exception as e:
-            st.error(f"Error getting news: {str(e)}")
-    
-    with tabs[3]:  # Trade Plan
-        try:
-            # Find trade plan for this symbol
-            trade_plans = st.session_state.get('trade_plans', [])
-            
-            trade_plan = next((plan for plan in trade_plans if plan['symbol'] == symbol), None)
-            
-            if trade_plan:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"""
-                    <div class="card card-{'green' if trade_plan['direction'] == 'long' else 'red'}">
-                        <h3>{trade_plan['direction'].upper()} {symbol}</h3>
-                        <p><b>Entry:</b> ${trade_plan['entry_price']:.2f}</p>
-                        <p><b>Stop Loss:</b> ${trade_plan['stop_loss']:.2f}</p>
-                        <p><b>Take Profit:</b> ${trade_plan['take_profit']:.2f}</p>
-                        <p><b>Position Size:</b> {trade_plan['position_size']} shares</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col2:
-                    st.markdown(f"""
-                    <div class="card card-blue">
-                        <h3>Risk Analysis</h3>
-                        <p><b>Potential Loss:</b> ${trade_plan['potential_loss']:.2f}</p>
-                        <p><b>Potential Profit:</b> ${trade_plan['potential_profit']:.2f}</p>
-                        <p><b>Risk-Reward Ratio:</b> 1:{trade_plan['risk_reward_ratio']:.1f}</p>
-                        <p><b>Score:</b> {trade_plan['score']:.1f}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                # Add price chart with entry, stop loss, and take profit levels
-                data = market_data.get_stock_data(symbol, period="1d", interval="15m")
-                
-                if not data.empty:
-                    fig = go.Figure()
-                    
-                    # Add candlestick chart
-                    fig.add_trace(
-                        go.Candlestick(
-                            x=data.index,
-                            open=data['Open'],
-                            high=data['High'],
-                            low=data['Low'],
-                            close=data['Close'],
-                            name='Price'
-                        )
-                    )
-                    
-                    # Add horizontal lines for entry, stop loss, and take profit
-                    fig.add_hline(
-                        y=trade_plan['entry_price'],
-                        line_dash="solid",
-                        line_color="blue",
-                        annotation_text="Entry",
-                        annotation_position="right"
-                    )
-                    
-                    fig.add_hline(
-                        y=trade_plan['stop_loss'],
-                        line_dash="dash",
-                        line_color="red",
-                        annotation_text="Stop Loss",
-                        annotation_position="right"
-                    )
-                    
-                    fig.add_hline(
-                        y=trade_plan['take_profit'],
-                        line_dash="dash",
-                        line_color="green",
-                        annotation_text="Take Profit",
-                        annotation_position="right"
-                    )
+    except Exception as e:
+        logger.error(f"Error creating trade plan chart: {str(e)}")
+        return None
 
-                    # Update layout
-                    fig.update_layout(
-                        title=f'{symbol} Trade Plan',
-                        xaxis_title='Time',
-                        yaxis_title='Price',
-                        height=400,
-                        margin=dict(l=50, r=50, t=50, b=50)
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True, key=f"trade_plan_chart_{symbol}_{unique_id}")
-            else:
-                st.info("No trade plan available for this stock")
-        
-        except Exception as e:
-            st.error(f"Error displaying trade plan: {str(e)}")
+# Routes
+# Add this after other imports
+import json
+from pathlib import Path
 
-def display_scan_results():
-    """Display stock scanner results"""
-    st.markdown("<h2 class='sub-header'>Scan Results</h2>", unsafe_allow_html=True)
-    
-    # Check if we have scan results
-    if 'scan_results' not in st.session_state:
-        st.info("No scan results available. Run a scan to see results.")
-        return
-    
-    scan_results = st.session_state['scan_results']
-    trade_plans = st.session_state.get('trade_plans', [])
-    last_scan_time = st.session_state.get('last_scan_time', 'Unknown')
-    
-    # Display scan summary
-    st.markdown(f"<p>Last scan: {last_scan_time}</p>", unsafe_allow_html=True)
-    st.markdown(f"<p>Universe size: {scan_results.get('universe_size', 0)} stocks</p>", unsafe_allow_html=True)
-    
-    # Create tabs for different result types
-    tabs = st.tabs(["Trading Opportunities", "Price Deviation", "High Volume", "High ATR", "Catalysts", "All Stocks"])
-    
-    with tabs[0]:  # Trading Opportunities
-        opportunities = scan_results.get('opportunities', [])
+# Add this after other route definitions
+@app.route('/save_filters', methods=['POST'])
+def save_filters():
+    try:
+        # Get filter values from form
+        filters = {
+            'min_price': request.form.get('min_price', 5, type=float),
+            'max_price': request.form.get('max_price', 100, type=float),
+            'min_volume': request.form.get('min_volume', 500000, type=int),
+            'min_deviation': request.form.get('min_deviation', 4.0, type=float)
+        }
         
-        if opportunities:
-            # Create a dataframe for display
-            df = pd.DataFrame(opportunities)
-            
-            # Add trade plan info
-            df['trade_plan'] = df['symbol'].apply(
-                lambda x: next((True for plan in trade_plans if plan['symbol'] == x), False)
-            )
-            
-            # Display as a table
-            st.dataframe(
-                df[['symbol', 'price', 'direction', 'score', 'trade_plan']],
-                column_config={
-                    'symbol': 'Symbol',
-                    'price': st.column_config.NumberColumn('Price', format="$%.2f"),
-                    'direction': 'Direction',
-                    'score': st.column_config.NumberColumn('Score', format="%.1f"),
-                    'trade_plan': st.column_config.CheckboxColumn('Trade Plan')
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Allow user to select a stock for detailed view
-            selected_symbol = st.selectbox(
-                "Select a stock for detailed view",
-                options=[item['symbol'] for item in opportunities]
-            )
-            
-            if selected_symbol:
-                display_stock_details(selected_symbol)
-        else:
-            st.info("No trading opportunities found")
-    
-    with tabs[1]:  # Price Deviation
-        deviation_results = scan_results.get('deviation_results', [])
+        # Save to a JSON file
+        filters_file = Path('static/saved_filters.json')
+        with open(filters_file, 'w') as f:
+            json.dump(filters, f)
         
-        if deviation_results:
-            # Create a dataframe for display
-            df = pd.DataFrame(deviation_results)
-            
-            # Display as a table
-            st.dataframe(
-                df[['symbol', 'current_price', 'deviation_pct', 'direction']],
-                column_config={
-                    'symbol': 'Symbol',
-                    'current_price': st.column_config.NumberColumn('Price', format="$%.2f"),
-                    'deviation_pct': st.column_config.NumberColumn('Deviation', format="%.2f%%"),
-                    'direction': 'Direction'
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Allow user to select a stock for detailed view
-            selected_symbol = st.selectbox(
-                "Select a stock for detailed view",
-                options=[item['symbol'] for item in deviation_results],
-                key="deviation_select"
-            )
-            
-            if selected_symbol:
-                display_stock_details(selected_symbol)
+        return jsonify({
+            'success': True,
+            'message': 'Filters saved successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error saving filters: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Failed to save filters'
+        })
+
+# Modify the index route to load saved filters
+@app.route('/')
+def index():
+    # Try to load saved filters
+    try:
+        filters_file = Path('static/saved_filters.json')
+        if filters_file.exists():
+            with open(filters_file, 'r') as f:
+                saved_filters = json.load(f)
         else:
-            st.info("No stocks with significant price deviation found")
+            saved_filters = {}
+    except Exception as e:
+        logger.error(f"Error loading saved filters: {str(e)}")
+        saved_filters = {}
+
+    # Get filter parameters from query string, saved filters, or use defaults
+    min_price = request.args.get('min_price', saved_filters.get('min_price', 5), type=float)
+    max_price = request.args.get('max_price', saved_filters.get('max_price', 100), type=float)
+    min_volume = request.args.get('min_volume', saved_filters.get('min_volume', 500000), type=int)
+    min_deviation = request.args.get('min_deviation', saved_filters.get('min_deviation', 4.0), type=float)
     
-    with tabs[2]:  # High Volume
-        volume_results = scan_results.get('volume_results', [])
+    # Store in session
+    session['min_price'] = min_price
+    session['max_price'] = max_price
+    session['min_volume'] = min_volume
+    session['min_deviation'] = min_deviation
+    
+    # Check if we need to run a scan
+    run_scan = request.args.get('run_scan', False, type=bool)
+    
+    scan_results = {}
+    trade_plans = []
+    last_scan_time = 'Never'
+    
+    if run_scan or 'scan_results' not in session:
+        scan_results, trade_plans = run_stock_scan()
+        last_scan_time = session.get('last_scan_time', 'Just now')
+    else:
+        scan_results = session.get('scan_results', {})
+        trade_plans = session.get('trade_plans', [])
+        last_scan_time = session.get('last_scan_time', 'Unknown')
+    
+    return render_template('index.html', 
+                          scan_results=scan_results,
+                          trade_plans=trade_plans,
+                          last_scan_time=last_scan_time,
+                          min_price=min_price,
+                          max_price=max_price,
+                          min_volume=min_volume,
+                          min_deviation=min_deviation)
+
+@app.route('/run_scan', methods=['POST'])
+def run_scan_route():
+    # Get filter parameters from form
+    min_price = request.form.get('min_price', 5, type=float)
+    max_price = request.form.get('max_price', 100, type=float)
+    min_volume = request.form.get('min_volume', 500000, type=int)
+    min_deviation = request.form.get('min_deviation', 4.0, type=float)
+    
+    # Store in session
+    session['min_price'] = min_price
+    session['max_price'] = max_price
+    session['min_volume'] = min_volume
+    session['min_deviation'] = min_deviation
+    
+    # Run scan
+    scan_results, trade_plans = run_stock_scan()
+    
+    return jsonify({
+        'success': True,
+        'redirect': '/'
+    })
+
+@app.route('/stock/<symbol>')
+def stock_details(symbol):
+    # Get trade plans from session
+    trade_plans = session.get('trade_plans', [])
+    trade_plan = next((plan for plan in trade_plans if plan['symbol'] == symbol), None)
+    
+    # Create charts
+    price_chart = create_price_chart(symbol)
+    atr_chart = create_atr_chart(symbol)
+    trade_plan_chart = None
+    
+    if trade_plan:
+        trade_plan_chart = create_trade_plan_chart(symbol, trade_plan)
+    
+    # Get stock data for metrics
+    stock_data = market_data.get_stock_data(symbol, period="1d", interval="1d")
+    stock_metrics = {}
+    
+    if not stock_data.empty:
+        current_price = stock_data['Close'].iloc[-1]
+        prev_close = stock_data['Open'].iloc[0]
+        change = current_price - prev_close
+        change_pct = (change / prev_close) * 100
         
-        if volume_results:
-            # Create a dataframe for display
-            df = pd.DataFrame(volume_results)
-            
-            # Display as a table
-            st.dataframe(
-                df[['symbol', 'current_price', 'relative_volume', 'volume']],
-                column_config={
-                    'symbol': 'Symbol',
-                    'current_price': st.column_config.NumberColumn('Price', format="$%.2f"),
-                    'relative_volume': st.column_config.NumberColumn('Relative Volume', format="%.2fx"),
-                    'volume': st.column_config.NumberColumn('Volume', format="%d")
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Allow user to select a stock for detailed view
-            selected_symbol = st.selectbox(
-                "Select a stock for detailed view",
-                options=[item['symbol'] for item in volume_results],
-                key="volume_select"
-            )
-            
-            if selected_symbol:
-                display_stock_details(selected_symbol)
-        else:
-            st.info("No stocks with high relative volume found")
+        stock_metrics = {
+            'current_price': f"${current_price:.2f}",
+            'change_pct': f"{change_pct:.2f}%",
+            'volume': format_large_number(stock_data['Volume'].iloc[-1]),
+            'rel_volume': f"{market_data.get_relative_volume(symbol):.2f}x",
+            'day_high': f"${stock_data['High'].iloc[-1]:.2f}",
+            'day_low': f"${stock_data['Low'].iloc[-1]:.2f}"
+        }
     
-    with tabs[3]:  # High ATR
-        atr_results = scan_results.get('atr_results', [])
+    # Get technical indicators
+    tech_indicators = {}
+    try:
+        data = market_data.get_stock_data(symbol, period="20d", interval="1d")
         
-        if atr_results:
-            # Create a dataframe for display
-            df = pd.DataFrame(atr_results)
+        if not data.empty:
+            # Calculate ATR
+            atr = scanner.atr_calculator.calculate_atr(data)
             
-            # Check available columns and use appropriate ones
-            columns_to_display = []
-            if 'symbol' in df.columns:
-                columns_to_display.append('symbol')
-            
-            # Use 'price' instead of 'current_price' if it exists
-            if 'price' in df.columns:
-                columns_to_display.append('price')
-            elif 'current_price' in df.columns:
-                columns_to_display.append('current_price')
-            
-            # Add other columns if they exist
-            for col in ['atr', 'atr_percentage', 'atr_ratio']:
-                if col in df.columns:
-                    columns_to_display.append(col)
-            
-            # Display as a table with available columns
-            st.dataframe(
-                df[columns_to_display],
-                column_config={
-                    'symbol': 'Symbol',
-                    'price': st.column_config.NumberColumn('Price', format="$%.2f"),
-                    'current_price': st.column_config.NumberColumn('Price', format="$%.2f"),
-                    'atr': st.column_config.NumberColumn('ATR', format="$%.2f"),
-                    'atr_percentage': st.column_config.NumberColumn('ATR %', format="%.2f%%"),
-                    'atr_ratio': st.column_config.NumberColumn('ATR Ratio', format="%.2fx")
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Allow user to select a stock for detailed view
-            selected_symbol = st.selectbox(
-                "Select a stock for detailed view",
-                options=[item['symbol'] for item in atr_results],
-                key="atr_select"
-            )
-            
-            if selected_symbol:
-                display_stock_details(selected_symbol)
-        else:
-            st.info("No stocks with high ATR found")
-    
-    with tabs[4]:  # Catalysts
-        catalyst_results = scan_results.get('catalyst_results', [])
-        
-        if catalyst_results:
-            # Create a dataframe for display
-            df = pd.DataFrame(catalyst_results)
-            
-            # Display as a table
-            st.dataframe(
-                df[['symbol', 'has_catalyst', 'catalyst_type']],
-                column_config={
-                    'symbol': 'Symbol',
-                    'has_catalyst': st.column_config.CheckboxColumn('Has Catalyst'),
-                    'catalyst_type': 'Catalyst Type'
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Allow user to select a stock for detailed view
-            selected_symbol = st.selectbox(
-                "Select a stock for detailed view",
-                options=[item['symbol'] for item in catalyst_results],
-                key="catalyst_select"
-            )
-            
-            if selected_symbol:
-                display_stock_details(selected_symbol)
-        else:
-            st.info("No stocks with potential catalysts found")
-    
-    with tabs[5]:  # All Stocks
-        # Get all stocks by significance
-        if 'all_stocks' not in st.session_state:
-            with st.spinner('Loading all stocks...'):
-                min_price = st.session_state.get('min_price', 5)
-                max_price = st.session_state.get('max_price', 100)
-                min_volume = st.session_state.get('min_volume', 500000)
+            if not atr.empty:
+                latest_atr = atr.iloc[-1]
+                latest_price = data['Close'].iloc[-1]
+                atr_percentage = (latest_atr / latest_price) * 100
                 
-                all_stocks = scanner.get_all_stocks_by_significance(
-                    min_price=min_price,
-                    max_price=max_price,
-                    min_volume=min_volume
-                )
-                
-                st.session_state['all_stocks'] = all_stocks
-        else:
-            all_stocks = st.session_state['all_stocks']
+                tech_indicators['atr'] = f"${latest_atr:.2f}"
+                tech_indicators['atr_pct'] = f"{atr_percentage:.2f}% of price"
         
-        if all_stocks:
-            # Create a dataframe for display
-            df = pd.DataFrame(all_stocks)
-            
-            # Display as a table
-            st.dataframe(
-                df[['symbol', 'price', 'deviation_pct', 'direction', 'relative_volume', 'atr_percentage', 'significance']],
-                column_config={
-                    'symbol': 'Symbol',
-                    'price': st.column_config.NumberColumn('Price', format="$%.2f"),
-                    'deviation_pct': st.column_config.NumberColumn('Deviation', format="%.2f%%"),
-                    'direction': 'Direction',
-                    'relative_volume': st.column_config.NumberColumn('Rel Volume', format="%.2fx"),
-                    'atr_percentage': st.column_config.NumberColumn('ATR %', format="%.2f%%"),
-                    'significance': st.column_config.NumberColumn('Significance', format="%.2f")
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Allow user to select a stock for detailed view
-            selected_symbol = st.selectbox(
-                "Select a stock for detailed view",
-                options=[item['symbol'] for item in all_stocks],
-                key="all_stocks_select"
-            )
-            
-            if selected_symbol:
-                display_stock_details(selected_symbol)
-        else:
-            st.info("No stocks found")
+        # Get relative strength
+        strength_results = scanner.calculate_relative_strength([symbol])
+        
+        if strength_results:
+            tech_indicators['rel_strength'] = f"{strength_results[0]['relative_strength']:.2f}%"
+            tech_indicators['percentile'] = f"{strength_results[0]['percentile']:.2f}"
+    
+    except Exception as e:
+        logger.error(f"Error getting technical indicators: {str(e)}")
+    
+    # Get news
+    news_items = news_data.get_stock_news(symbol, max_news=10)
+    catalyst_info = news_data.check_for_catalyst(symbol)
+    
+    return render_template('stock_details.html',
+                          symbol=symbol,
+                          price_chart=price_chart,
+                          atr_chart=atr_chart,
+                          trade_plan_chart=trade_plan_chart,
+                          trade_plan=trade_plan,
+                          stock_metrics=stock_metrics,
+                          tech_indicators=tech_indicators,
+                          news_items=news_items,
+                          catalyst_info=catalyst_info)
 
-def main():
-    """Main function to run the app"""
-    # Set up the header
-    st.markdown("<h1 class='main-header'>Daily Stock Picker</h1>", unsafe_allow_html=True)
-    
-    # Sidebar
-    st.sidebar.markdown("<h2 class='main-header'>Stock Scanner</h2>", unsafe_allow_html=True)
-    
-    # Get tooltips from scanner
-    tooltips = scanner.get_metric_tooltips()
-    
-    # Price filter with tooltip
-    st.sidebar.subheader("Price Filter")
-    min_price = st.sidebar.number_input(
-        "Minimum Price ($)", 
-        min_value=1.0, 
-        max_value=1000.0, 
-        value=5.0,
-        step=1.0,
-        help=tooltips.get('price', {}).get('description', "Minimum stock price to include in scan.") if 'price' in tooltips else "Minimum stock price to include in scan."
-    )
-    
-    max_price = st.sidebar.number_input(
-        "Maximum Price ($)", 
-        min_value=1.0, 
-        max_value=10000.0, 
-        value=100.0,
-        step=10.0,
-        help=tooltips.get('price', {}).get('description', "Maximum stock price to include in scan.") if 'price' in tooltips else "Maximum stock price to include in scan."
-    )
-    
-    # Volume filter with tooltip
-    st.sidebar.subheader("Volume Filter")
-    min_volume = st.sidebar.number_input(
-        "Minimum Volume", 
-        min_value=10000, 
-        max_value=10000000, 
-        value=500000,
-        step=100000,
-        format="%d",
-        help=tooltips.get('volume', {}).get('description', "Minimum trading volume to include in scan.") if 'volume' in tooltips else "Minimum trading volume to include in scan."
-    )
-    
-    # Price deviation filter with tooltip
-    st.sidebar.subheader("Price Deviation")
-    min_deviation = st.sidebar.number_input(
-        "Minimum Deviation (%)", 
-        min_value=1.0, 
-        max_value=20.0, 
-        value=4.0,
-        step=0.5,
-        help=tooltips.get('price_deviation', {}).get('description', "Minimum price deviation percentage to flag a stock.") if 'price_deviation' in tooltips else "Minimum price deviation percentage to flag a stock."
-    )
-    
-    # Relative volume filter with tooltip
-    st.sidebar.subheader("Relative Volume")
-    min_rel_volume = st.sidebar.number_input(
-        "Minimum Relative Volume", 
-        min_value=1.0, 
-        max_value=10.0, 
-        value=1.5,
-        step=0.1,
-        help=tooltips.get('relative_volume', {}).get('description', "Minimum relative volume to flag a stock.") if 'relative_volume' in tooltips else "Minimum relative volume to flag a stock."
-    )
-    
-    # ATR filter with tooltip
-    st.sidebar.subheader("ATR Filter")
-    min_atr_ratio = st.sidebar.number_input(
-        "Minimum ATR Ratio", 
-        min_value=0.5, 
-        max_value=5.0, 
-        value=1.2,
-        step=0.1,
-        help=tooltips.get('atr_ratio', {}).get('description', "Minimum ATR ratio to flag a stock.") if 'atr_ratio' in tooltips else "Minimum ATR ratio to flag a stock."
-    )
-    
-    # Store filter values in session state
-    if st.sidebar.button("Apply Filters"):
-        st.session_state['min_price'] = min_price
-        st.session_state['max_price'] = max_price
-        st.session_state['min_volume'] = min_volume
-        st.session_state['min_deviation'] = min_deviation
-        st.session_state['min_rel_volume'] = min_rel_volume
-        st.session_state['min_atr_ratio'] = min_atr_ratio
-        
-        # Clear cached results
-        if 'all_stocks' in st.session_state:
-            del st.session_state['all_stocks']
-        
-        # Run scan with new filters
-        run_stock_scan()
-    
-    # Run scan button
-    if st.sidebar.button("Run Stock Scan"):
-        run_stock_scan()
-    
-    # Display last scan time
-    if 'last_scan_time' in st.session_state:
-        st.sidebar.markdown(f"Last scan: {st.session_state['last_scan_time']}")
-    
-    # Display scan results
-    display_scan_results()
+@app.route('/api/opportunities')
+def api_opportunities():
+    scan_results = session.get('scan_results', {})
+    opportunities = scan_results.get('opportunities', [])
+    return jsonify(opportunities)
 
-if __name__ == "__main__":
-    main()
+@app.route('/api/deviation_results')
+def api_deviation_results():
+    scan_results = session.get('scan_results', {})
+    deviation_results = scan_results.get('deviation_results', [])
+    return jsonify(deviation_results)
+
+@app.route('/api/volume_results')
+def api_volume_results():
+    scan_results = session.get('scan_results', {})
+    volume_results = scan_results.get('volume_results', [])
+    return jsonify(volume_results)
+
+@app.route('/api/atr_results')
+def api_atr_results():
+    scan_results = session.get('scan_results', {})
+    atr_results = scan_results.get('atr_results', [])
+    return jsonify(atr_results)
+
+@app.route('/api/catalyst_results')
+def api_catalyst_results():
+    scan_results = session.get('scan_results', {})
+    catalyst_results = scan_results.get('catalyst_results', [])
+    return jsonify(catalyst_results)
+
+def open_browser():
+    """Open the default web browser to the Flask app URL."""
+    webbrowser.open_new('http://127.0.0.1:5000')
+
+if __name__ == '__main__':
+    # Create templates and static directories if they don't exist
+    os.makedirs('templates', exist_ok=True)
+    os.makedirs('static', exist_ok=True)
+    os.makedirs('static/css', exist_ok=True)
+    os.makedirs('static/js', exist_ok=True)
+    
+    # Start a thread to open the browser
+    threading.Timer(1, open_browser).start()
+    
+    app.run(debug=False, port=5000)
