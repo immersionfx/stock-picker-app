@@ -1,0 +1,145 @@
+<!-- Stock Details Content -->
+<div class="stock-details-content">
+    <div class="stock-header">
+        <h3>{{ details.symbol }}</h3>
+        <div class="stock-price">
+            ${{ "%.2f"|format(details.stock_metrics.current_price) }}
+            <span class="{{ 'up-value' if details.stock_metrics.change_pct > 0 else 'down-value' }}">
+                ({{ "%.2f"|format(details.stock_metrics.change_pct) }}%)
+            </span>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab-header">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="technicals">Technicals</button>
+            <button class="tab-btn" data-tab="charts">Charts</button>
+            <button class="tab-btn" data-tab="news">News</button>
+            {% if details.trade_plan %}
+            <button class="tab-btn" data-tab="trade-plan">Trade Plan</button>
+            {% endif %}
+        </div>
+
+        <div class="tab-content">
+            <!-- Overview Tab -->
+            <div class="tab-pane active" id="overview">
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <label>Day Range</label>
+                        <span>${{ "%.2f"|format(details.stock_metrics.day_low) }} - ${{ "%.2f"|format(details.stock_metrics.day_high) }}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>Volume</label>
+                        <span>{{ "{:,}".format(details.stock_metrics.volume) }}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>Relative Volume</label>
+                        <span>{{ "%.2f"|format(details.stock_metrics.rel_volume) }}x</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>ATR</label>
+                        <span>${{ "%.2f"|format(details.tech_indicators.atr) }} ({{ "%.2f"|format(details.tech_indicators.atr_pct) }}%)</span>
+                    </div>
+                </div>
+
+                {% if details.price_chart %}
+                <div class="chart" id="price-chart-{{ details.symbol }}" data-chart-data='{{ details.price_chart|tojson }}'>
+                    <!-- Chart will be initialized by JavaScript -->
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Technicals Tab -->
+            <div class="tab-pane" id="technicals">
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <label>Relative Strength</label>
+                        <span>{{ "%.2f"|format(details.tech_indicators.rel_strength) }}%</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>RS Percentile</label>
+                        <span>{{ "%.2f"|format(details.tech_indicators.percentile) }}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>ATR</label>
+                        <span>${{ "%.2f"|format(details.tech_indicators.atr) }}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>ATR %</label>
+                        <span>{{ "%.2f"|format(details.tech_indicators.atr_pct) }}%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Tab -->
+            <div class="tab-pane" id="charts">
+                {% if details.price_chart %}
+                <div class="chart-container">
+                    <h4>Price Action</h4>
+                    <div class="chart" id="price-chart2-{{ details.symbol }}" data-chart-data='{{ details.price_chart|tojson }}'>
+                        <!-- Chart will be initialized by JavaScript -->
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if details.atr_chart %}
+                <div class="chart-container">
+                    <h4>ATR Analysis</h4>
+                    <div class="chart" id="atr-chart-{{ details.symbol }}" data-chart-data='{{ details.atr_chart|tojson }}'>
+                        <!-- Chart will be initialized by JavaScript -->
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- News Tab -->
+            <div class="tab-pane" id="news">
+                {% if details.news_items %}
+                    <div class="news-list">
+                        {% for news_item in details.news_items %}
+                        <div class="news-item">
+                            <h4>{{ news_item.title }}</h4>
+                            <p class="news-meta">{{ news_item.date }} - {{ news_item.source }}</p>
+                            <p class="news-summary">{{ news_item.summary }}</p>
+                            <a href="{{ news_item.url }}" target="_blank" class="btn btn-sm">Read More</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="info-message">No recent news available</div>
+                {% endif %}
+            </div>
+
+            <!-- Trade Plan Tab -->
+            {% if details.trade_plan %}
+            <div class="tab-pane" id="trade-plan">
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <label>Entry Price</label>
+                        <span>${{ "%.2f"|format(details.trade_plan.entry_price) }}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>Stop Loss</label>
+                        <span>${{ "%.2f"|format(details.trade_plan.stop_loss) }}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>Take Profit</label>
+                        <span>${{ "%.2f"|format(details.trade_plan.take_profit) }}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>Risk/Reward</label>
+                        <span>{{ "%.2f"|format(details.trade_plan.risk_reward) }}</span>
+                    </div>
+                </div>
+
+                {% if details.trade_plan_chart %}
+                <div class="chart" id="trade-plan-chart-{{ details.symbol }}" data-chart-data='{{ details.trade_plan_chart|tojson }}'>
+                    <!-- Chart will be initialized by JavaScript -->
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div> 

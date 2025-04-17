@@ -18,18 +18,32 @@ import os
 import sys
 import threading
 import webbrowser
+import asyncio
+import atexit
+from websockets.server import serve as websockets_serve
+from websockets.exceptions import ConnectionClosed
+from log_handler import WebSocketHandler
 
 # Import our modules
 from data_retrieval import MarketDataFetcher, NewsDataFetcher
 from stock_scanner import StockScanner
 from trading_strategy import TradingStrategy
 
-# Set up logging
+# Set up logging with WebSocket handler
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('stock_picker_ui')
+
+# Create and add WebSocket handler
+ws_log_handler = WebSocketHandler()
+ws_log_handler.setFormatter(logging.Formatter('%(message)s'))
+logger.addHandler(ws_log_handler)
+
+# Add WebSocket handler to other loggers
+for logger_name in ['data_retrieval', 'stock_scanner', 'trading_strategy']:
+    logging.getLogger(logger_name).addHandler(ws_log_handler)
 
 # Initialize components
 market_data = MarketDataFetcher()
@@ -394,81 +408,6 @@ def run_scan_route():
         'redirect': '/'
     })
 
-@app.route('/stock/<symbol>')
-def stock_details(symbol):
-    # Get trade plans from session
-    trade_plans = session.get('trade_plans', [])
-    trade_plan = next((plan for plan in trade_plans if plan['symbol'] == symbol), None)
-    
-    # Create charts
-    price_chart = create_price_chart(symbol)
-    atr_chart = create_atr_chart(symbol)
-    trade_plan_chart = None
-    
-    if trade_plan:
-        trade_plan_chart = create_trade_plan_chart(symbol, trade_plan)
-    
-    # Get stock data for metrics
-    stock_data = market_data.get_stock_data(symbol, period="1d", interval="1d")
-    stock_metrics = {}
-    
-    if not stock_data.empty:
-        current_price = stock_data['Close'].iloc[-1]
-        prev_close = stock_data['Open'].iloc[0]
-        change = current_price - prev_close
-        change_pct = (change / prev_close) * 100
-        
-        stock_metrics = {
-            'current_price': f"${current_price:.2f}",
-            'change_pct': f"{change_pct:.2f}%",
-            'volume': format_large_number(stock_data['Volume'].iloc[-1]),
-            'rel_volume': f"{market_data.get_relative_volume(symbol):.2f}x",
-            'day_high': f"${stock_data['High'].iloc[-1]:.2f}",
-            'day_low': f"${stock_data['Low'].iloc[-1]:.2f}"
-        }
-    
-    # Get technical indicators
-    tech_indicators = {}
-    try:
-        data = market_data.get_stock_data(symbol, period="20d", interval="1d")
-        
-        if not data.empty:
-            # Calculate ATR
-            atr = scanner.atr_calculator.calculate_atr(data)
-            
-            if not atr.empty:
-                latest_atr = atr.iloc[-1]
-                latest_price = data['Close'].iloc[-1]
-                atr_percentage = (latest_atr / latest_price) * 100
-                
-                tech_indicators['atr'] = f"${latest_atr:.2f}"
-                tech_indicators['atr_pct'] = f"{atr_percentage:.2f}% of price"
-        
-        # Get relative strength
-        strength_results = scanner.calculate_relative_strength([symbol])
-        
-        if strength_results:
-            tech_indicators['rel_strength'] = f"{strength_results[0]['relative_strength']:.2f}%"
-            tech_indicators['percentile'] = f"{strength_results[0]['percentile']:.2f}"
-    
-    except Exception as e:
-        logger.error(f"Error getting technical indicators: {str(e)}")
-    
-    # Get news
-    news_items = news_data.get_stock_news(symbol, max_news=10)
-    catalyst_info = news_data.check_for_catalyst(symbol)
-    
-    return render_template('stock_details.html',
-                          symbol=symbol,
-                          price_chart=price_chart,
-                          atr_chart=atr_chart,
-                          trade_plan_chart=trade_plan_chart,
-                          trade_plan=trade_plan,
-                          stock_metrics=stock_metrics,
-                          tech_indicators=tech_indicators,
-                          news_items=news_items,
-                          catalyst_info=catalyst_info)
-
 @app.route('/api/opportunities')
 def api_opportunities():
     scan_results = session.get('scan_results', {})
@@ -499,9 +438,149 @@ def api_catalyst_results():
     catalyst_results = scan_results.get('catalyst_results', [])
     return jsonify(catalyst_results)
 
+@app.route('/api/stock_details/<symbol>')
+def api_stock_details(symbol):
+    try:
+        # Get trade plans from session
+        trade_plans = session.get('trade_plans', [])
+        trade_plan = next((plan for plan in trade_plans if plan['symbol'] == symbol), None)
+        
+        # Create charts
+        price_chart = create_price_chart(symbol)
+        atr_chart = create_atr_chart(symbol)
+        trade_plan_chart = None
+        
+        if trade_plan:
+            trade_plan_chart = create_trade_plan_chart(symbol, trade_plan)
+        
+        # Get stock data for metrics
+        stock_data = market_data.get_stock_data(symbol, period="1d", interval="1d")
+        stock_metrics = {}
+        
+        if not stock_data.empty:
+            current_price = stock_data['Close'].iloc[-1]
+            prev_close = stock_data['Open'].iloc[0]
+            change = current_price - prev_close
+            change_pct = (change / prev_close) * 100
+            
+            stock_metrics = {
+                'current_price': current_price,
+                'change_pct': change_pct,
+                'volume': stock_data['Volume'].iloc[-1],
+                'rel_volume': market_data.get_relative_volume(symbol),
+                'day_high': stock_data['High'].iloc[-1],
+                'day_low': stock_data['Low'].iloc[-1]
+            }
+        
+        # Get technical indicators
+        tech_indicators = {}
+        data = market_data.get_stock_data(symbol, period="20d", interval="1d")
+        
+        if not data.empty:
+            # Calculate ATR
+            atr = scanner.atr_calculator.calculate_atr(data)
+            
+            if not atr.empty:
+                latest_atr = atr.iloc[-1]
+                latest_price = data['Close'].iloc[-1]
+                atr_percentage = (latest_atr / latest_price) * 100
+                
+                tech_indicators['atr'] = latest_atr
+                tech_indicators['atr_pct'] = atr_percentage
+        
+        # Get relative strength
+        strength_results = scanner.calculate_relative_strength([symbol])
+        
+        if strength_results:
+            tech_indicators['rel_strength'] = strength_results[0]['relative_strength']
+            tech_indicators['percentile'] = strength_results[0]['percentile']
+        
+        # Get news
+        news_items = news_data.get_stock_news(symbol, max_news=10)
+        catalyst_info = news_data.check_for_catalyst(symbol)
+
+        details = {
+            'symbol': symbol,
+            'stock_metrics': stock_metrics,
+            'tech_indicators': tech_indicators,
+            'price_chart': price_chart,
+            'atr_chart': atr_chart,
+            'trade_plan_chart': trade_plan_chart,
+            'trade_plan': trade_plan,
+            'news_items': news_items,
+            'catalyst_info': catalyst_info
+        }
+        
+        # Render only the content template
+        return render_template('stock_details_content.html', details=details)
+    except Exception as e:
+        return f'<div class="error-message">Error loading details for {symbol}: {str(e)}</div>', 500
+
 def open_browser():
     """Open the default web browser to the Flask app URL."""
     webbrowser.open_new('http://127.0.0.1:5000')
+
+async def handle_websocket(websocket, path):
+    """Handle WebSocket connections"""
+    try:
+        logger.info("New WebSocket client connected")
+        # Add client to handler
+        ws_log_handler.add_client(websocket)
+        
+        # Send a test message
+        test_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'level': 'DEBUG',
+            'message': 'WebSocket connection established',
+            'logger': 'websocket'
+        }
+        await websocket.send(json.dumps(test_entry))
+        
+        # Keep connection alive
+        while True:
+            try:
+                # Wait for messages (keeps connection alive)
+                message = await websocket.recv()
+                # Echo back any received messages
+                await websocket.send(message)
+            except ConnectionClosed:
+                break
+            
+    except Exception as e:
+        logger.error(f"Error in websocket handler: {str(e)}")
+    finally:
+        # Remove client when disconnected
+        ws_log_handler.remove_client(websocket)
+        logger.info("WebSocket client disconnected")
+
+def run_websocket_server():
+    """Run the WebSocket server"""
+    async def serve():
+        async with websockets_serve(
+            handle_websocket,
+            "localhost",
+            8765,
+            ping_interval=None,  # Disable ping to prevent timeouts
+        ) as server:
+            await asyncio.Future()  # run forever
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        loop.run_until_complete(serve())
+    except Exception as e:
+        logger.error(f"Error starting WebSocket server: {str(e)}")
+    finally:
+        loop.close()
+
+# Add cleanup function
+def cleanup():
+    """Clean up resources before exit"""
+    ws_log_handler.close()
+
+# Register cleanup function
+atexit.register(cleanup)
 
 if __name__ == '__main__':
     # Create templates and static directories if they don't exist
@@ -512,5 +591,9 @@ if __name__ == '__main__':
     
     # Start a thread to open the browser
     threading.Timer(1, open_browser).start()
+    
+    # Start WebSocket server in a separate thread
+    websocket_thread = threading.Thread(target=run_websocket_server, daemon=True)
+    websocket_thread.start()
     
     app.run(debug=False, port=5000)

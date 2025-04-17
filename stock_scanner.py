@@ -350,15 +350,15 @@ class StockScanner:
             dict: Dictionary with scan results
         """
         try:
-            logger.info("Starting comprehensive stock scan")
+            logger.debug("Starting comprehensive stock scan")
             
             # Get stock universe
-            logger.info("Getting stock universe")
+            logger.debug("Getting stock universe")
             universe = self.market_data.get_stock_universe(min_price, max_price, min_volume)
             logger.info(f"Found {len(universe)} stocks in universe")
             
             # Scan for price deviation
-            logger.info("Scanning for price deviation")
+            logger.debug("Scanning for price deviation")
             deviation_results = self.scan_for_price_deviation(universe, min_deviation=4.0)
             logger.info(f"Found {len(deviation_results)} stocks with significant price deviation")
             
@@ -369,22 +369,22 @@ class StockScanner:
             scan_symbols = deviation_symbols if len(deviation_symbols) >= 10 else universe[:100]
             
             # Scan for high relative volume
-            logger.info("Scanning for high relative volume")
+            logger.debug("Scanning for high relative volume")
             volume_results = self.scan_for_high_relative_volume(scan_symbols)
             logger.info(f"Found {len(volume_results)} stocks with high relative volume")
             
             # Scan for high ATR
-            logger.info("Scanning for high ATR")
+            logger.debug("Scanning for high ATR")
             atr_results = self.scan_for_high_atr(scan_symbols)
             logger.info(f"Found {len(atr_results)} stocks with high ATR")
             
             # Check for catalysts
-            logger.info("Checking for catalysts")
+            logger.debug("Checking for catalysts")
             catalyst_results = self.check_for_catalysts(deviation_symbols)
             logger.info(f"Found {len(catalyst_results)} stocks with potential catalysts")
             
             # Calculate relative strength
-            logger.info("Calculating relative strength")
+            logger.debug("Calculating relative strength")
             strength_results = self.calculate_relative_strength(scan_symbols)
             logger.info(f"Calculated relative strength for {len(strength_results)} stocks")
             
@@ -399,7 +399,8 @@ class StockScanner:
             
             logger.info(f"Identified {len(opportunities)} trading opportunities")
             
-            return {
+            # Create results summary
+            results = {
                 'universe_size': len(universe),
                 'deviation_results': deviation_results,
                 'volume_results': volume_results,
@@ -408,6 +409,18 @@ class StockScanner:
                 'strength_results': strength_results,
                 'opportunities': opportunities
             }
+            
+            # Log the summary
+            logger.info(f"Scan Results Summary:")
+            logger.info(f"- Universe Size: {len(universe)} stocks")
+            logger.info(f"- Price Deviation Matches: {len(deviation_results)} stocks")
+            logger.info(f"- High Volume Matches: {len(volume_results)} stocks")
+            logger.info(f"- High ATR Matches: {len(atr_results)} stocks")
+            logger.info(f"- Stocks with Catalysts: {len(catalyst_results)} stocks")
+            logger.info(f"- Stocks with Strong Relative Strength: {len(strength_results)} stocks")
+            logger.info(f"- Total Trading Opportunities Found: {len(opportunities)} stocks")
+            
+            return results
             
         except Exception as e:
             logger.error(f"Error running comprehensive scan: {str(e)}")

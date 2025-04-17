@@ -1,0 +1,125 @@
+.log-popup {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 600px;
+    height: 400px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: none; /* Hidden by default */
+    flex-direction: column;
+    z-index: 1000;
+    font-family: 'Consolas', 'Monaco', monospace;
+    transition: opacity 0.3s ease-in-out;
+}
+
+.log-popup.visible {
+    display: flex;
+}
+
+.log-popup-header {
+    padding: 12px 16px;
+    background: #2c3e50;
+    color: white;
+    border-radius: 8px 8px 0 0;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.log-popup-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    background: #1e1e1e;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.log-popup-buttons {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+    background: #34495e;
+    border-radius: 0 0 8px 8px;
+}
+
+.log-popup-close,
+.log-popup-clear {
+    padding: 8px 16px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.log-popup-close {
+    background: #c0392b;
+}
+
+.log-popup-clear {
+    background: #2980b9;
+}
+
+.log-popup-close:hover {
+    background: #a93226;
+}
+
+.log-popup-clear:hover {
+    background: #2471a3;
+}
+
+.log-entry {
+    margin: 4px 0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #4ade80; /* Light green color for all log text */
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.log-timestamp {
+    color: #888;
+    margin-right: 8px;
+}
+
+.log-level {
+    display: inline-block;
+    min-width: 60px;
+    margin-right: 8px;
+    text-align: center;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+.log-message {
+    color: #4ade80; /* Light green color for the message text */
+}
+
+/* Log level colors */
+.log-info .log-level {
+    background: #2980b9;
+    color: white;
+}
+
+.log-warning .log-level {
+    background: #f39c12;
+    color: white;
+}
+
+.log-error .log-level {
+    background: #c0392b;
+    color: white;
+}
+
+.log-debug .log-level {
+    background: #27ae60;
+    color: white;
+}

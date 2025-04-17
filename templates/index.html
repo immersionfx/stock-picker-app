@@ -53,7 +53,7 @@
                                         {% endfor %}
                                         <span class="{{ 'yes' if has_plan else 'no' }}">{{ 'Yes' if has_plan else 'No' }}</span>
                                     </td>
-                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                    <td><button type="button" class="btn btn-sm stock-details-btn" data-symbol="{{ item.symbol }}">Details</button></td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -85,7 +85,7 @@
                                     <td>${{ "%.2f"|format(item.current_price) }}</td>
                                     <td>{{ "%.2f"|format(item.deviation_pct) }}%</td>
                                     <td class="{{ 'up-value' if item.direction == 'up' else 'down-value' }}">{{ item.direction }}</td>
-                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                    <td><button type="button" class="btn btn-sm stock-details-btn" data-symbol="{{ item.symbol }}">Details</button></td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -117,7 +117,7 @@
                                     <td>${{ "%.2f"|format(item.current_price|default(0)) }}</td>
                                     <td>{{ "%.2f"|format(item.relative_volume) }}x</td>
                                     <td>{{ item.current_volume }}</td>
-                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                    <td><button type="button" class="btn btn-sm stock-details-btn" data-symbol="{{ item.symbol }}">Details</button></td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -149,7 +149,7 @@
                                     <td>${{ "%.2f"|format(item.price if item.price is defined else item.current_price) }}</td>
                                     <td>${{ "%.2f"|format(item.atr) }}</td>
                                     <td>{{ "%.2f"|format(item.atr_percentage) }}%</td>
-                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                    <td><button type="button" class="btn btn-sm stock-details-btn" data-symbol="{{ item.symbol }}">Details</button></td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -179,7 +179,7 @@
                                     <td>{{ item.symbol }}</td>
                                     <td><span class="{{ 'yes' if item.has_catalyst else 'no' }}">{{ 'Yes' if item.has_catalyst else 'No' }}</span></td>
                                     <td>{{ item.catalyst_type|join(', ') }}</td>
-                                    <td><a href="{{ url_for('stock_details', symbol=item.symbol) }}" class="btn btn-sm">Details</a></td>
+                                    <td><button type="button" class="btn btn-sm stock-details-btn" data-symbol="{{ item.symbol }}">Details</button></td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -192,22 +192,12 @@
         </div>
     </div>
     </div>
-    
+
+    <!-- Stock Details Section -->
     <div id="stock-details-section" style="display: none;">
         <h2 class="section-title">Stock Details</h2>
-        <div class="stock-details">
-            <div class="tabs">
-                <div class="tab-header">
-                    <button class="tab-btn active" data-tab="price-chart">Price Chart</button>
-                    <button class="tab-btn" data-tab="technical">Technical Analysis</button>
-                    <button class="tab-btn" data-tab="news">News</button>
-                    <button class="tab-btn" data-tab="trade-plan">Trade Plan</button>
-                </div>
-                <div class="tab-content" id="details-content">
-                    <!-- Content will be loaded here -->
-                </div>
-            </div>
-        </div>
+        <button id="close-details" class="btn btn-sm">Close Details</button>
+        <div id="details-content"></div>
     </div>
 </div>
 {% endblock %}
@@ -237,42 +227,45 @@
         // Initialize tabs for scan results
         initTabs(document.querySelector('.dashboard .tabs'));
         
+        // Function to initialize charts
+        function initializeCharts(container) {
+            const charts = container.querySelectorAll('.chart');
+            charts.forEach(chart => {
+                if (chart.dataset.chartData) {
+                    const chartData = JSON.parse(chart.dataset.chartData);
+                    Plotly.newPlot(chart.id, chartData.data, chartData.layout);
+                }
+            });
+        }
+        
         // Handle Details button clicks
-        document.querySelectorAll('a.btn[href*="stock_details"]').forEach(btn => {
+        document.querySelectorAll('.stock-details-btn').forEach(btn => {
             btn.addEventListener('click', function(e) {
                 e.preventDefault();
-                const symbol = this.href.split('/').pop();
+                const symbol = this.dataset.symbol;
                 const detailsSection = document.getElementById('stock-details-section');
-                const scanResultsSection = document.getElementById('scan-results-section');
                 
                 // Show loading state
                 detailsSection.style.display = 'block';
                 document.getElementById('details-content').innerHTML = '<div class="loading">Loading details...</div>';
                 
+                // Scroll to details section
+                detailsSection.scrollIntoView({ behavior: 'smooth' });
+                
                 // Fetch stock details
-                fetch(`/stock_details/${symbol}`)
+                fetch(`/api/stock_details/${symbol}`)
                     .then(response => response.text())
                     .then(html => {
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(html, 'text/html');
-                        const content = doc.querySelector('.tab-content');
+                        document.getElementById('details-content').innerHTML = html;
                         
-                        if (content) {
-                            document.getElementById('details-content').innerHTML = content.innerHTML;
-                            // Initialize tabs for stock details
-                            initTabs(detailsSection.querySelector('.tabs'));
-                            
-                            // Initialize any charts if present
-                            if (typeof Plotly !== 'undefined') {
-                                const charts = doc.querySelectorAll('.chart');
-                                charts.forEach(chart => {
-                                    if (chart.dataset.chartData) {
-                                        const chartData = JSON.parse(chart.dataset.chartData);
-                                        Plotly.newPlot(chart.id, chartData.data, chartData.layout);
-                                    }
-                                });
-                            }
+                        // Initialize tabs in the details section
+                        const detailsTabs = document.querySelector('#details-content .tabs');
+                        if (detailsTabs) {
+                            initTabs(detailsTabs);
                         }
+                        
+                        // Initialize charts
+                        initializeCharts(document.getElementById('details-content'));
                     })
                     .catch(error => {
                         document.getElementById('details-content').innerHTML = 
@@ -282,25 +275,32 @@
             });
         });
 
+        // Handle close details button
+        document.getElementById('close-details').addEventListener('click', function() {
+            document.getElementById('stock-details-section').style.display = 'none';
+        });
+
         // Form submission with AJAX
         const scanForm = document.getElementById('scan-form');
-        scanForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(scanForm);
-            
-            fetch(scanForm.action, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    window.location.href = data.redirect;
-                }
-            })
-            .catch(error => console.error('Error:', error));
-        });
+        if (scanForm) {
+            scanForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(scanForm);
+                
+                fetch(scanForm.action, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            });
+        }
     });
 </script>
 {% endblock %}

@@ -53,11 +53,11 @@ class MarketDataFetcher:
         if (cache_key in self.cache and 
             cache_key in self.cache_expiry and 
             current_time < self.cache_expiry[cache_key]):
-            logger.info(f"Using cached data for {symbol}")
+            logger.debug(f"Using cached data for {symbol}")
             return self.cache[cache_key]
         
         try:
-            logger.info(f"Fetching data for {symbol} with period={period}, interval={interval}")
+            logger.debug(f"Fetching data for {symbol} with period={period}, interval={interval}")
             stock = yf.Ticker(symbol)
             data = stock.history(period=period, interval=interval, prepost=include_premarket)
             
@@ -154,7 +154,7 @@ class MarketDataFetcher:
             
             # For demonstration, if we couldn't get components, use a sample list
             if not all_symbols:
-                logger.info("Using sample stock list as fallback")
+                logger.debug("Using sample stock list as fallback")
                 all_symbols = [
                     'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'TSLA', 'NVDA', 'JPM', 
                     'JNJ', 'V', 'PG', 'UNH', 'HD', 'BAC', 'MA', 'DIS', 'ADBE', 'CRM', 
