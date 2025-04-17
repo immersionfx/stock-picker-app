@@ -42,7 +42,7 @@ To start the Stock Picker application:
 python app.py
 ```
 
-This will launch the Streamlit web interface in your default browser. If the browser doesn't open automatically, you can access the application at http://localhost:8501.
+This will launch the Flask web interface in your default browser. If the browser doesn't open automatically, you can access the application at http://localhost:5000.
 
 ## Using the Application
 
